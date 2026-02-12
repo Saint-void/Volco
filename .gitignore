@@ -1,0 +1,50 @@
+# --- Volco/Vella Project Specifics ---
+# Local audio files (The recordings and responses)
+input.wav
+response.wav
+reply.wav
+tts_output_*.wav
+temp_audio/
+
+# --- Python / Virtual Environments ---
+# This catches 'venv', '.venv', and other common names
+venv/
+.venv/
+env/
+ENV/
+bin/
+lib/
+include/
+share/
+pyvenv.cfg
+pip-selfcheck.json
+
+# --- Compiled files ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Environment & Sensitive Data ---
+# If you eventually add API keys or secrets
+.env
+.flaskenv
+
+# --- Database / Storage ---
+# Local SQLite or model storage you don't want in git
+*.db
+*.sqlite3
+models/
+# If you use Weaviate or vector store locally
+vector_data/
+
+# --- Operating System ---
+# Windows
+Thumbs.db
+desktop.ini
+# macOS
+.DS_Store
+
+# --- IDEs ---
+.vscode/
+.idea/
+*.swp

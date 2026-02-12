@@ -1,0 +1,21 @@
+# --- Vella Backend (Server Core) ---
+fastapi          # Web framework for the brain
+uvicorn          # ASGI server to run the backend
+pydantic         # Data validation for chat and TTS requests
+python-multipart # Required by FastAPI to handle file uploads
+
+# --- Intelligence & Processing ---
+faster-whisper   # Optimized offline STT
+TTS              # Coqui TTS for offline voice generation
+transformers     # LLM support (required by your chat_agent)
+torch            # Deep learning backend for STT/TTS/LLM
+
+# --- Database & Memory ---
+psycopg2-binary  # PostgreSQL connector for auth
+weaviate-client  # Semantic search for long-term memory
+
+# --- Volco Client (Audio Hardware I/O) ---
+sounddevice      # Captures mic audio and plays responses
+numpy            # Handles audio data arrays
+scipy            # Reads/Writes WAV files for transmission
+requests         # Sends audio data from Volco to Vella
