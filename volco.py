@@ -1,181 +1,178 @@
 import os
 import time
 import struct
-import wave
 import keyboard
-import requests
 import pyaudio
 import pvporcupine
-import winsound  # Native Windows Audio
 from pvrecorder import PvRecorder
+import websocket # pip install websocket-client
 
 # =============================
 # CONFIGURATION
 # =============================
-SERVER_URL = "https://exhilaratingly-heaveless-lael.ngrok-free.dev/volco_process"
+# IMPORTANT: Use 'ws://' for WebSockets, not 'http://'
+# Replace with your Server IP
+WS_URL = "ws://172.26.32.1:8001/volco_ws" 
+
 PICOVOICE_ACCESS_KEY = "Sl361++BBZqn4rQXFqhoMICzrkMMg13QUDhlBU73myt6WcR93sbZMg==" 
 PUSH_TO_TALK_KEY = "right shift"
 CUSTOM_WAKE_WORD_PATH = "./assets/Hey-Vella_en_windows_v4_0_0.ppn" 
 
 # Audio Settings
-FORMAT = pyaudio.paInt16
-CHANNELS = 1
-RATE = 16000
+REC_FORMAT = pyaudio.paInt16
+REC_CHANNELS = 1
+REC_RATE = 16000
 CHUNK = 1024
-SILENCE_THRESHOLD = 500  
-SILENCE_LIMIT = 1.0
+SILENCE_THRESHOLD = 100
+SILENCE_LIMIT = 2.0
 
-def play_audio(file_path):
-    """Plays WAV using native Windows drivers. Blocks by default."""
-    if not os.path.exists(file_path):
-        print("⚠️ Audio file missing.")
-        return
-    
-    print("   ▶️ Playing audio...")
+def handle_stream_transaction(trigger_source):
+    """
+    Handles the full bi-directional stream:
+    1. Connect to WebSocket
+    2. Stream Mic -> Server (Chunk by Chunk)
+    3. Signal End of Speech ("COMMIT")
+    4. Stream Server -> Speakers (Chunk by Chunk)
+    """
+    print(f" 🚀 Connecting to {WS_URL}...")
     try:
-        # FIX: Removed invalid SND_WAIT. It waits by default.
-        winsound.PlaySound(file_path, winsound.SND_FILENAME)
+        ws = websocket.create_connection(WS_URL)
     except Exception as e:
-        print(f"   ⚠️ Audio Playback Failed: {e}")
-    print("   ⏹️ Audio finished.")
+        print(f"❌ Connection Error: {e}")
+        return
 
-def record_audio_manual():
     p = pyaudio.PyAudio()
-    stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
-    frames = []
-    print(" 🎤 [PTT] Recording...")
-    try:
-        while keyboard.is_pressed(PUSH_TO_TALK_KEY):
-            frames.append(stream.read(CHUNK))
-    finally:
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
-    return frames
-
-def record_audio_auto():
-    p = pyaudio.PyAudio()
-    stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
-    frames = []
-    print(" 🎤 [AUTO] Listening to you...")
+    
+    # --- PHASE 1: STREAMING INPUT (Mic -> Server) ---
+    # We open the mic and send data AS we read it. No saving to file.
+    mic_stream = p.open(
+        format=REC_FORMAT, 
+        channels=REC_CHANNELS, 
+        rate=REC_RATE, 
+        input=True, 
+        frames_per_buffer=CHUNK
+    )
+    
+    print(" 🎤 Streaming to Brain...")
     
     silence_start = None
     started_talking = False
     
     try:
         while True:
-            data = stream.read(CHUNK)
-            frames.append(data)
-            audio_data = struct.unpack_from("%dh" % CHUNK, data)
+            # 1. Read Mic Data
+            data = mic_stream.read(CHUNK, exception_on_overflow=False)
             
-            if max(audio_data) > SILENCE_THRESHOLD:
-                started_talking = True
-                silence_start = None
-            elif started_talking:
-                if silence_start is None: 
-                    silence_start = time.time()
-                elif time.time() - silence_start > SILENCE_LIMIT: 
-                    break
+            # 2. Send to Server INSTANTLY
+            ws.send_binary(data)
+            
+            # 3. Check Stop Condition (Button or Silence)
+            if trigger_source == "PTT":
+                if not keyboard.is_pressed(PUSH_TO_TALK_KEY):
+                    break # User released button
+            else: 
+                # Auto-Silence Detection
+                audio_data = struct.unpack_from("%dh" % CHUNK, data)
+                if max(audio_data) > SILENCE_THRESHOLD:
+                    started_talking = True
+                    silence_start = None
+                elif started_talking:
+                    if silence_start is None: 
+                        silence_start = time.time()
+                    elif time.time() - silence_start > SILENCE_LIMIT: 
+                        break # Silence limit reached
+                    
     finally:
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
-    return frames
-
-def save_and_send(frames):
-    filename = "temp_input.wav"
-    try:
-        wf = wave.open(filename, 'wb')
-        wf.setnchannels(CHANNELS)
-        wf.setsampwidth(2)
-        wf.setframerate(RATE)
-        wf.writeframes(b''.join(frames))
-        wf.close()
-    except Exception as e:
-        print(f"❌ File Save Error: {e}")
-        return
-
-    print(" 🚀 Sending to Volco...")
-    try:
-        # 60s timeout for safety
-        with open(filename, "rb") as f:
-            response = requests.post(SERVER_URL, files={"audio": f}, timeout=60) 
+        mic_stream.stop_stream()
+        mic_stream.close()
         
-        if response.status_code == 200:
-            print(" 🤖 Vella is replying...")
-            with open("reply.wav", "wb") as f:
-                f.write(response.content)
+        # 4. Tell Server we are done talking
+        print(" 📤 Sending COMMIT signal...")
+        ws.send("COMMIT")
+
+    # --- PHASE 2: STREAMING OUTPUT (Server -> Speakers) ---
+    print(" 🗣️ Vella Speaking...")
+    
+    # Piper Output Stream (Usually 22050Hz)
+    speaker_stream = p.open(
+        format=pyaudio.paInt16, 
+        channels=1, 
+        rate=22050, 
+        output=True
+    )
+    
+    try:
+        while True:
+            # Receive Data from WebSocket
+            # opcode 2 = Binary (Audio), opcode 1 = Text (Control signals)
+            opcode, data = ws.recv_data()
             
-            # Play using fixed function
-            play_audio("reply.wav")
-            
-        else:
-            print(f" ❌ Server Error: {response.status_code}")
+            if opcode == websocket.ABNF.OPCODE_BINARY:
+                # It's Audio -> Play Immediately
+                speaker_stream.write(data)
+                
+            elif opcode == websocket.ABNF.OPCODE_TEXT:
+                # It's a Control Signal
+                msg = data.decode('utf-8')
+                if msg == "END_OF_RESPONSE":
+                    break
+                elif msg == "NO_SPEECH":
+                    print(" ⚠️ No speech detected.")
+                    break
+                    
     except Exception as e:
-        print(f" ❌ Connection Failed: {e}")
+        print(f"❌ Receive Error: {e}")
+    finally:
+        ws.close()
+        speaker_stream.stop_stream()
+        speaker_stream.close()
+        p.terminate()
+        print(" ⏹️ Done.")
 
 def main():
     porcupine = None
     recorder = None
-    
     try:
-        porcupine = pvporcupine.create(
-            access_key=PICOVOICE_ACCESS_KEY,
-            keyword_paths=[CUSTOM_WAKE_WORD_PATH]
-        )
+        porcupine = pvporcupine.create(access_key=PICOVOICE_ACCESS_KEY, keyword_paths=[CUSTOM_WAKE_WORD_PATH])
         recorder = PvRecorder(device_index=-1, frame_length=porcupine.frame_length)
         recorder.start()
+        print("\n✅ VELLA INPUT STREAMING ACTIVE")
+        print(f"   - URL: {WS_URL}")
         
-        print("\n✅ VELLA SYSTEM ACTIVE")
-        print(f"   - Say 'HEY VELLA' or hold '{PUSH_TO_TALK_KEY.upper()}'")
-
         while True:
             pcm = recorder.read()
-
-            # 1. Push-to-Talk Check
+            
             if keyboard.is_pressed(PUSH_TO_TALK_KEY):
-                print("\n🎤 Push-to-talk active")
                 recorder.stop()
-                frames = record_audio_manual()
-                save_and_send(frames)
+                # Pass "PTT" so it knows to wait for button release
+                handle_stream_transaction("PTT")
                 
-                print("🔄 Resetting Ears...")
-                time.sleep(0.5) 
+                print("🔄 Resetting...")
+                time.sleep(0.5)
                 recorder.start()
-                continue
-
-            # 2. Wake Word Check
-            if porcupine.process(pcm) >= 0:
-                print("\n⚡ Wake word detected: Hey Vella")
-                recorder.stop()
-                frames = record_audio_auto()
-                save_and_send(frames)
                 
-                print("🔄 Resetting Ears...")
+            elif porcupine.process(pcm) >= 0:
+                print("\n⚡ Hey Vella!")
+                recorder.stop()
+                # Pass "AUTO" so it uses silence detection
+                handle_stream_transaction("AUTO")
+                
+                print("🔄 Resetting...")
                 time.sleep(0.5)
                 recorder.start()
 
     except KeyboardInterrupt:
-        print("\n👋 User stopped script.")
-        raise 
+        print("\n👋 Shutdown.")
     except Exception as e:
-        print(f"❌ Main Loop Logic Error: {e}")
+        print(f"❌ Error: {e}")
     finally:
         if recorder is not None: recorder.delete()
         if porcupine is not None: porcupine.delete()
 
-def run_forever():
-    """Restarts the main function if it crashes."""
+if __name__ == "__main__":
     while True:
         try:
             main()
-        except KeyboardInterrupt:
-            print("\nShutting down.")
-            break
-        except BaseException as e: 
-            print(f"\n⚠️ CRITICAL CRASH DETECTED: {e}")
-            print("♻️  Restarting Vella in 2 seconds...")
+        except BaseException:
+            print("Restarting...")
             time.sleep(2)
-
-if __name__ == "__main__":
-    run_forever()
