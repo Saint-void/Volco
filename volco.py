@@ -12,7 +12,7 @@ import websocket # pip install websocket-client
 # =============================
 # IMPORTANT: Use 'ws://' for WebSockets, not 'http://'
 # Replace with your Server IP
-WS_URL = "ws://172.26.32.1:8001/volco_ws" 
+WS_URL = "ws://localhost:8001/volco_ws" 
 
 PICOVOICE_ACCESS_KEY = "Sl361++BBZqn4rQXFqhoMICzrkMMg13QUDhlBU73myt6WcR93sbZMg==" 
 PUSH_TO_TALK_KEY = "right shift"
@@ -22,9 +22,9 @@ CUSTOM_WAKE_WORD_PATH = "./assets/Hey-Vella_en_windows_v4_0_0.ppn"
 REC_FORMAT = pyaudio.paInt16
 REC_CHANNELS = 1
 REC_RATE = 16000
-CHUNK = 1024
+CHUNK = 512
 SILENCE_THRESHOLD = 100
-SILENCE_LIMIT = 2.0
+SILENCE_LIMIT = 0.7   
 
 def handle_stream_transaction(trigger_source):
     """
@@ -34,11 +34,11 @@ def handle_stream_transaction(trigger_source):
     3. Signal End of Speech ("COMMIT")
     4. Stream Server -> Speakers (Chunk by Chunk)
     """
-    print(f" 🚀 Connecting to {WS_URL}...")
+    print(f"Connecting to {WS_URL}...")
     try:
         ws = websocket.create_connection(WS_URL)
     except Exception as e:
-        print(f"❌ Connection Error: {e}")
+        print(f"Connection Error: {e}")
         return
 
     p = pyaudio.PyAudio()
@@ -53,7 +53,7 @@ def handle_stream_transaction(trigger_source):
         frames_per_buffer=CHUNK
     )
     
-    print(" 🎤 Streaming to Brain...")
+    print("Streaming to Brain...")
     
     silence_start = None
     started_talking = False
@@ -87,11 +87,11 @@ def handle_stream_transaction(trigger_source):
         mic_stream.close()
         
         # 4. Tell Server we are done talking
-        print(" 📤 Sending COMMIT signal...")
+        print("Sending COMMIT signal...")
         ws.send("COMMIT")
 
     # --- PHASE 2: STREAMING OUTPUT (Server -> Speakers) ---
-    print(" 🗣️ Vella Speaking...")
+    print("Vella Speaking...")
     
     # Piper Output Stream (Usually 22050Hz)
     speaker_stream = p.open(
@@ -121,13 +121,13 @@ def handle_stream_transaction(trigger_source):
                     break
                     
     except Exception as e:
-        print(f"❌ Receive Error: {e}")
+        print(f"Receive Error: {e}")
     finally:
         ws.close()
         speaker_stream.stop_stream()
         speaker_stream.close()
         p.terminate()
-        print(" ⏹️ Done.")
+        print("Done.")
 
 def main():
     porcupine = None
@@ -136,7 +136,7 @@ def main():
         porcupine = pvporcupine.create(access_key=PICOVOICE_ACCESS_KEY, keyword_paths=[CUSTOM_WAKE_WORD_PATH])
         recorder = PvRecorder(device_index=-1, frame_length=porcupine.frame_length)
         recorder.start()
-        print("\n✅ VELLA INPUT STREAMING ACTIVE")
+        print("\n VELLA INPUT STREAMING ACTIVE")
         print(f"   - URL: {WS_URL}")
         
         while True:
@@ -147,7 +147,7 @@ def main():
                 # Pass "PTT" so it knows to wait for button release
                 handle_stream_transaction("PTT")
                 
-                print("🔄 Resetting...")
+                print("Resetting...")
                 time.sleep(0.5)
                 recorder.start()
                 
@@ -157,14 +157,14 @@ def main():
                 # Pass "AUTO" so it uses silence detection
                 handle_stream_transaction("AUTO")
                 
-                print("🔄 Resetting...")
+                print("Resetting...")
                 time.sleep(0.5)
                 recorder.start()
 
     except KeyboardInterrupt:
-        print("\n👋 Shutdown.")
+        print("\n Shutdown.")
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
     finally:
         if recorder is not None: recorder.delete()
         if porcupine is not None: porcupine.delete()
