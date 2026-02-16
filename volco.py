@@ -12,7 +12,9 @@ import websocket # pip install websocket-client
 # =============================
 # IMPORTANT: Use 'ws://' for WebSockets, not 'http://'
 # Replace with your Server IP
-WS_URL = "ws://localhost:8001/volco_ws" 
+# UPDATE THIS LINE
+# We add ?client_type=device&user_id=sogolo
+WS_URL = "ws://localhost:8001/volco_ws?client_type=device&user_id=sogolo"
 
 PICOVOICE_ACCESS_KEY = "Sl361++BBZqn4rQXFqhoMICzrkMMg13QUDhlBU73myt6WcR93sbZMg==" 
 PUSH_TO_TALK_KEY = "right shift"
