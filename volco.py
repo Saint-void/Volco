@@ -3,19 +3,24 @@ import time
 import struct
 import keyboard
 import pyaudio
+import wave  # <--- NEW: For playing WAV files
 import pvporcupine
 from pvrecorder import PvRecorder
 import websocket # pip install websocket-client
 import sys
 
 # =============================
-# CONFIGURATION
+# CONFIGURATION 
 # =============================
 WS_URL = "ws://localhost:8001/volco_ws?client_type=device&user_id=sogolo"
 
 PICOVOICE_ACCESS_KEY = "Sl361++BBZqn4rQXFqhoMICzrkMMg13QUDhlBU73myt6WcR93sbZMg==" 
 PUSH_TO_TALK_KEY = "right shift"
 CUSTOM_WAKE_WORD_PATH = "./assets/Hey-Vella_en_windows_v4_0_0.ppn" 
+
+# 🎵 SOUND EFFECTS CONFIG
+SFX_WAKE = "./assets/sounds/wake.wav"
+SFX_SLEEP = "./assets/sounds/sleep.wav"
 
 # Audio Settings
 REC_FORMAT = pyaudio.paInt16
@@ -24,12 +29,37 @@ REC_RATE = 16000
 CHUNK = 512
 
 # 🧠 ADAPTIVE SETTINGS
-SILENCE_LIMIT = 1.0       # Wait 1.0s of silence to confirm end of sentence
+SILENCE_LIMIT = 0.5       # Wait 0.5s of silence to confirm end of sentence
 SAFETY_MARGIN = 500       # INCREASED: Needs to be distinctly louder than room
 SESSION_TIMEOUT = 5.0     # 5s of silence = Sleep
 MIN_SPEECH_DURATION = 0.5 # 🛡️ IGNORE sounds shorter than this (clicks/coughs)
 
 CURRENT_NOISE_FLOOR = 500 
+
+# =============================
+# 🔊 HELPER: PLAY SOUND EFFECT
+# =============================
+def play_sfx(filename):
+    """Plays a WAV file without blocking the main thread too much."""
+    if not os.path.exists(filename):
+        return # Fail silently if file doesn't exist
+
+    try:
+        wf = wave.open(filename, 'rb')
+        p = pyaudio.PyAudio()
+        stream = p.open(format=p.get_format_from_width(wf.getsampwidth()),
+                        channels=wf.getnchannels(),
+                        rate=wf.getframerate(),
+                        output=True)
+        data = wf.readframes(1024)
+        while data:
+            stream.write(data)
+            data = wf.readframes(1024)
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+    except Exception:
+        pass
 
 # =============================
 # 🛠️ HELPER: VISUALIZER
@@ -132,6 +162,10 @@ def handle_continuous_session():
                 else:
                     if time.time() - session_timer > SESSION_TIMEOUT:
                         print("\n💤 Session Timeout. Going to sleep.")
+                        
+                        # 🎵 PLAY SLEEP SOUND
+                        play_sfx(SFX_SLEEP)
+                        
                         mic_stream.stop_stream()
                         mic_stream.close()
                         ws.close()
@@ -167,8 +201,6 @@ def handle_continuous_session():
             
             else:
                 # If it was just noise, DON'T commit. Just reset buffer.
-                # Sending a dummy "RESET" or just sending empty audio logic implies
-                # we just loop back and wait for REAL speech.
                 pass
             
     except Exception as e:
@@ -196,6 +228,10 @@ def main():
             pcm = recorder.read()
             if porcupine.process(pcm) >= 0:
                 print("\n⚡ WAKE WORD DETECTED!")
+                
+                # 🎵 PLAY WAKE SOUND
+                play_sfx(SFX_WAKE)
+
                 recorder.stop()
                 handle_continuous_session()
                 print("\n✅ VOLCO READY | Waiting for 'Hey Vella'...")
@@ -214,4 +250,4 @@ if __name__ == "__main__":
         try: main()
         except BaseException as e:
             print(f"Restarting... {e}")
-            time.sleep(2)
+            time.sleep(2)   
