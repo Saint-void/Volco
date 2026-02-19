@@ -85,30 +85,39 @@ def print_audio_meter(volume, threshold, is_active, status_text="LISTENING"):
     sys.stdout.write(f"\r{color}🎤 {status_text} | Level: {volume:05d} | Trig: {threshold} | [{bar}]{reset}")
     sys.stdout.flush()
 
-def calibrate_mic():
-    global CURRENT_NOISE_FLOOR
+def calibrate_mic(duration=1.0):
     p = pyaudio.PyAudio()
     stream = p.open(format=REC_FORMAT, channels=REC_CHANNELS, rate=REC_RATE, input=True, frames_per_buffer=CHUNK)
-    print("\n🤫 Measuring room noise...")
+    
+    if duration > 0.6: print("\n🤫 Measuring room noise...")
+    
     max_noise = 0
     start = time.time()
-    while time.time() - start < 1.0:
+    while time.time() - start < duration:
         data = stream.read(CHUNK, exception_on_overflow=False)
         peak = max(struct.unpack_from("%dh" % CHUNK, data))
         if peak > max_noise: max_noise = peak
-        print_audio_meter(peak, 0, False, "CALIBRATING")
+        if duration > 0.6: print_audio_meter(peak, 0, False, "CALIBRATING")
+    
     stream.stop_stream()
     stream.close()
     p.terminate()
-    CURRENT_NOISE_FLOOR = max_noise
-    print(f"\n✅ Noise Floor: {CURRENT_NOISE_FLOOR} | Trig: {CURRENT_NOISE_FLOOR + SAFETY_MARGIN}\n")
+    
+    if max_noise < 100: max_noise = 100
+    
+    if duration > 0.6:
+        print(f"\n✅ Noise Floor: {max_noise} | Trig: {max_noise + SAFETY_MARGIN}\n")
+    
+    return max_noise
 
 # =============================
-# 📡 SESSION LOGIC (NO HEARTBEAT HERE)
+# 📡 SESSION LOGIC
 # =============================
-def handle_continuous_session(recorder, porcupine, ws):
+def handle_continuous_session(recorder, porcupine, ws, noise_floor):
     p = pyaudio.PyAudio()
-    DYNAMIC_THRESHOLD = CURRENT_NOISE_FLOOR + SAFETY_MARGIN
+    DYNAMIC_THRESHOLD = noise_floor + SAFETY_MARGIN
+    print(f"\n🧠 Adaptive Threshold set to: {DYNAMIC_THRESHOLD}")
+
     connection_alive = True
 
     try:
@@ -124,7 +133,6 @@ def handle_continuous_session(recorder, porcupine, ws):
             while True:
                 data = mic_stream.read(CHUNK, exception_on_overflow=False)
                 
-                # ⚡ Just send data. No PINGs here. Audio keeps it alive.
                 try:
                     ws.send_binary(data)
                 except:
@@ -160,17 +168,19 @@ def handle_continuous_session(recorder, porcupine, ws):
                         mic_stream.stop_stream()
                         mic_stream.close()
                         p.terminate()
-                        return # Exit to main loop (Heartbeat will resume there)
+                        return 
 
             mic_stream.stop_stream()
             mic_stream.close()
 
-            if not connection_alive: raise Exception("Socket died")
+            if not connection_alive: return 
 
             if valid_speech:
                 print("🚀 Sending COMMIT...")
-                ws.send("COMMIT")
-                print("🤖 Volco Speaking... (Say 'Hey Vella' to Interrupt)")
+                try: ws.send("COMMIT")
+                except: return
+
+                print("🤖 Volco Speaking.. ")
                 
                 recorder.start()
                 stop_event = threading.Event()
@@ -195,14 +205,15 @@ def handle_continuous_session(recorder, porcupine, ws):
                     try:
                         opcode, data = ws.recv_data()
                         if stop_event.is_set(): break
+                        
                         if opcode == websocket.ABNF.OPCODE_BINARY:
                             speaker_stream.write(data)
                         elif opcode == websocket.ABNF.OPCODE_TEXT:
                             msg = data.decode('utf-8')
                             if msg == "END_OF_RESPONSE": break
                             elif msg == "NO_SPEECH": break
-                    except Exception as e:
-                        print(f"Socket Error: {e}")
+                    
+                    except Exception:
                         connection_alive = False
                         break 
                 
@@ -212,27 +223,27 @@ def handle_continuous_session(recorder, porcupine, ws):
                 speaker_stream.stop_stream()
                 speaker_stream.close()
                 
-                if not connection_alive: raise Exception("Socket died")
+                if not connection_alive: return 
                 print("\n👂 Ready for next turn...")
             else:
                 pass
             
     except Exception as e:
-        # Don't print huge error, just say reset
-        # print(f"\n❌ Session Error: {e}") 
         try: recorder.stop()
         except: pass
-        raise e
+        return 
     finally:
         p.terminate()
 
 # =============================
-# 🚀 MAIN LOOP (HEARTBEAT LIVES HERE)
+# 🚀 MAIN LOOP
 # =============================
 def main():
     advertiser = VolcoAdvertiser()
     advertiser.start()
-    calibrate_mic()
+    
+    global CURRENT_NOISE_FLOOR
+    CURRENT_NOISE_FLOOR = calibrate_mic(duration=1.0)
 
     porcupine = None
     recorder = None
@@ -246,7 +257,7 @@ def main():
 
         print(f"🔌 Connecting to Brain at {WS_URL}...")
         try:
-            ws = websocket.create_connection(WS_URL)
+            ws = websocket.create_connection(WS_URL, ping_interval=15, ping_timeout=10)
             print("✅ Brain Connected!")
         except Exception as e:
             print(f"⚠️ Brain Offline: {e}")
@@ -256,38 +267,48 @@ def main():
         while True:
             pcm = recorder.read()
             
-            # 💓 IDLE HEARTBEAT (Only when waiting)
-            # This keeps the connection open during long silences
+            # 💓 IDLE HEARTBEAT
             if ws and ws.connected and (time.time() - last_ping > 20):
                 try:
                     ws.send("PING")
                     last_ping = time.time()
                 except:
-                    ws = None # Mark dead
+                    ws = None
 
             if porcupine.process(pcm) >= 0:
                 print("\n⚡ WAKE WORD DETECTED!")
-                play_sfx(SFX_WAKE) 
                 
-                # RECONNECT IF NEEDED
+                # 1. CHECK CONNECTION FIRST
                 if ws is None or not ws.connected:
                     print("🔌 Reconnecting...")
                     try:
-                        ws = websocket.create_connection(WS_URL)
+                        ws = websocket.create_connection(WS_URL, ping_interval=15, ping_timeout=10)
                         print("✅ Reconnected.")
                     except:
                         print(f"❌ Failed.")
                         play_sfx(SFX_SLEEP)
                         continue
 
+                # 2. SCAN ENVIRONMENT (SILENT)
                 try:
                     recorder.stop()
-                    handle_continuous_session(recorder, porcupine, ws)
+                    print("🔍 Scanning Environment...")
+                    current_noise = calibrate_mic(duration=0.5)
+                    
+                    # 3. NOW PLAY SOUND (MEANS "GO!")
+                    play_sfx(SFX_WAKE)
+
+                    # 4. START RECORDING
+                    handle_continuous_session(recorder, porcupine, ws, current_noise)
+                    
                     recorder.start()
                     print("\n✅ VOLCO READY | Waiting for 'Hey Vella'...")
                 except Exception as e:
-                    print(f"⚠️ Connection refreshed.")
+                    print(f"⚠️ Connection lost. Reconnecting...")
+                    try: ws.close()
+                    except: pass
                     ws = None
+                    time.sleep(1)
                     recorder.start()
 
     except KeyboardInterrupt:
