@@ -33,7 +33,11 @@ REC_CHANNELS = 1
 REC_RATE = 16000
 CHUNK = 512 
 
-SILENCE_LIMIT = 0.5       
+# FIXED: Added explicit playback rate so it isn't buried in the code.
+# ⚠️ Ensure this matches the sample rate your server returns!
+PLAYBACK_RATE = 22050 
+
+SILENCE_LIMIT = 1.5       
 SAFETY_MARGIN = 500       
 SESSION_TIMEOUT = 5.0     
 MIN_SPEECH_DURATION = 0.5 
@@ -122,27 +126,43 @@ def handle_continuous_session(recorder, porcupine, ws, noise_floor):
     print(f"\n🧠 Adaptive Threshold set to: {DYNAMIC_THRESHOLD}")
 
     connection_alive = True
+    
+    # Calculate how many chunks make up ~0.5 seconds of audio for our pre-roll
+    MAX_PRE_BUFFER_CHUNKS = int((REC_RATE / CHUNK) * 0.5)
 
     try:
         while connection_alive:
-            # --- PHASE 1: LISTEN ---
-            mic_stream = p.open(format=REC_FORMAT, channels=REC_CHANNELS, rate=REC_RATE, input=True, frames_per_buffer=CHUNK)
+            try:
+                mic_stream = p.open(format=REC_FORMAT, channels=REC_CHANNELS, rate=REC_RATE, input=True, frames_per_buffer=CHUNK)
+            except Exception as e:
+                print(f"\n⚠️ Mic busy, giving it a second... ({e})")
+                time.sleep(0.5)
+                continue
+
             silence_start = None
             started_talking = False
             session_timer = time.time()
             speech_start_time = 0 
             valid_speech = False
+            
+            # This holds recent audio locally so we don't send endless silence to the server
+            audio_pre_buffer = []
 
             while True:
-                data = mic_stream.read(CHUNK, exception_on_overflow=False)
+                try:
+                    data = mic_stream.read(CHUNK, exception_on_overflow=False)
+                except Exception as e:
+                    print(f"\n⚠️ Audio read error: {e}")
+                    break
+
+                if len(data) < CHUNK * 2:
+                    continue
                 
                 try:
-                    ws.send_binary(data)
-                except:
-                    connection_alive = False
-                    break 
-                
-                volume = max(struct.unpack_from("%dh" % CHUNK, data))
+                    volume = max(struct.unpack_from("%dh" % CHUNK, data))
+                except Exception as e:
+                    continue
+
                 is_loud = volume > DYNAMIC_THRESHOLD
                 status = "RECORDING" if started_talking else "LISTENING"
                 print_audio_meter(volume, DYNAMIC_THRESHOLD, is_loud or started_talking, status)
@@ -151,10 +171,39 @@ def handle_continuous_session(recorder, porcupine, ws, noise_floor):
                     if not started_talking:
                         started_talking = True
                         speech_start_time = time.time()
+                        
+                        # 🚀 We just crossed the threshold! Send the pre-buffer so the first syllable isn't cut off.
+                        try:
+                            for b in audio_pre_buffer:
+                                ws.send(b, opcode=websocket.ABNF.OPCODE_BINARY)
+                        except Exception as e:
+                            connection_alive = False
+                            break
+                        audio_pre_buffer.clear()
+                        
                     silence_start = None 
                     session_timer = time.time()
-                elif started_talking:
-                    if silence_start is None: silence_start = time.time()
+                
+                # --- ROUTING THE AUDIO ---
+                if started_talking:
+                    # If we are officially talking, stream directly to the server
+                    try:
+                        ws.send(data, opcode=websocket.ABNF.OPCODE_BINARY)
+                    except Exception as e:
+                        print(f"\n🔌 Connection dropped during stream: {e}")
+                        connection_alive = False
+                        break 
+                else:
+                    # If we aren't talking yet, just keep the last 0.5s of audio locally
+                    audio_pre_buffer.append(data)
+                    if len(audio_pre_buffer) > MAX_PRE_BUFFER_CHUNKS:
+                        audio_pre_buffer.pop(0)
+
+                # --- SILENCE TIMEOUT LOGIC ---
+                if started_talking and silence_start is None and not is_loud:
+                    silence_start = time.time()
+                
+                if started_talking and silence_start is not None:
                     total_speech_time = silence_start - speech_start_time
                     if time.time() - silence_start > SILENCE_LIMIT:
                         if total_speech_time > MIN_SPEECH_DURATION:
@@ -163,25 +212,29 @@ def handle_continuous_session(recorder, porcupine, ws, noise_floor):
                         else:
                             print(f"\n❌ Ignored noise ({total_speech_time:.2f}s)")
                             valid_speech = False
+                            # 🧹 Tell the server to delete the short burst of noise we just sent
+                            try: ws.send("CANCEL") 
+                            except: pass
                         break 
-                else:
+                elif not started_talking:
                     if time.time() - session_timer > SESSION_TIMEOUT:
                         print("\n💤 Session Timeout.")
                         play_sfx(SFX_SLEEP)
                         mic_stream.stop_stream()
                         mic_stream.close()
-                        p.terminate()
                         return 
 
-            mic_stream.stop_stream()
-            mic_stream.close()
+            try:
+                mic_stream.stop_stream()
+                mic_stream.close()
+            except: pass
 
             if not connection_alive: return 
 
             if valid_speech:
                 print("🚀 Sending COMMIT...")
                 try: ws.send("COMMIT")
-                except: return
+                except Exception as e: return
 
                 print("🤖 Volco Speaking..")
                 
@@ -201,37 +254,41 @@ def handle_continuous_session(recorder, porcupine, ws, noise_floor):
                 t = threading.Thread(target=watch_for_interrupt)
                 t.start()
 
-                speaker_stream = p.open(format=pyaudio.paInt16, channels=1, rate=22050, output=True)
+                speaker_stream = p.open(format=pyaudio.paInt16, channels=1, rate=PLAYBACK_RATE, output=True)
+                ws.settimeout(0.1) 
                 
                 while True:
                     if stop_event.is_set(): break
                     try:
-                        opcode, data = ws.recv_data()
+                        opcode, incoming_data = ws.recv_data()
                         if stop_event.is_set(): break
                         
                         if opcode == websocket.ABNF.OPCODE_BINARY:
-                            speaker_stream.write(data)
+                            speaker_stream.write(incoming_data)
                         elif opcode == websocket.ABNF.OPCODE_TEXT:
-                            msg = data.decode('utf-8')
-                            if msg == "END_OF_RESPONSE": break
-                            elif msg == "NO_SPEECH": break
-                    
-                    except Exception:
+                            msg = incoming_data.decode('utf-8')
+                            if msg == "END_OF_RESPONSE" or msg == "NO_SPEECH": break
+                    except websocket.WebSocketTimeoutException: continue 
+                    except Exception as e:
                         connection_alive = False
                         break 
                 
+                ws.settimeout(None)
                 stop_event.set()
                 t.join()
                 recorder.stop()
-                speaker_stream.stop_stream()
-                speaker_stream.close()
+                
+                try:
+                    speaker_stream.stop_stream()
+                    speaker_stream.close()
+                except: pass
                 
                 if not connection_alive: return 
                 print("\n👂 Ready for next turn...")
-            else:
-                pass
-            
+                play_sfx(SFX_WAKE)
+
     except Exception as e:
+        print(f"\n🛑 Critical Session Error: {e}") 
         try: recorder.stop()
         except: pass
         return 
@@ -260,7 +317,8 @@ def main():
 
         print(f"🔌 Connecting to Brain at {WS_URL}...")
         try:
-            ws = websocket.create_connection(WS_URL, ping_interval=15, ping_timeout=10)
+            # FIXED: Removed invalid arguments (ping_interval, ping_timeout) from create_connection
+            ws = websocket.create_connection(WS_URL) 
             print("✅ Brain Connected!")
         except Exception as e:
             print(f"⚠️ Brain Offline: {e}")
@@ -285,7 +343,8 @@ def main():
                 if ws is None or not ws.connected:
                     print("🔌 Reconnecting...")
                     try:
-                        ws = websocket.create_connection(WS_URL, ping_interval=15, ping_timeout=10)
+                        # FIXED: Removed invalid arguments here too
+                        ws = websocket.create_connection(WS_URL)
                         print("✅ Reconnected.")
                     except:
                         print(f"❌ Failed.")
@@ -316,6 +375,7 @@ def main():
 
     except KeyboardInterrupt:
         print("\n👋 Goodbye.")
+        sys.exit(0) # FIXED: Added exit to break out of the "Unkillable" loop
     finally:
         if ws: ws.close()
         advertiser.stop()
@@ -324,7 +384,9 @@ def main():
 
 if __name__ == "__main__":
     while True:
-        try: main()
-        except BaseException as e:
+        try: 
+            main()
+        # FIXED: Changed BaseException to Exception so it doesn't swallow sys.exit() or Ctrl+C
+        except Exception as e: 
             print(f"Restarting... {e}")
             time.sleep(2)
