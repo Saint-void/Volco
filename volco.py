@@ -117,7 +117,7 @@ def calibrate_mic(duration=1.0):
     
     return max_noise
 
-# =============================
+## =============================
 # 📡 SESSION LOGIC
 # =============================
 def handle_continuous_session(recorder, porcupine, ws, noise_floor):
@@ -126,8 +126,8 @@ def handle_continuous_session(recorder, porcupine, ws, noise_floor):
     print(f"\n🧠 Adaptive Threshold set to: {DYNAMIC_THRESHOLD}")
 
     connection_alive = True
+    is_first_turn = True # 🆕 Tracks if this is the initial wake-up moment
     
-    # Calculate how many chunks make up ~0.5 seconds of audio for our pre-roll
     MAX_PRE_BUFFER_CHUNKS = int((REC_RATE / CHUNK) * 0.5)
 
     try:
@@ -144,8 +144,8 @@ def handle_continuous_session(recorder, porcupine, ws, noise_floor):
             session_timer = time.time()
             speech_start_time = 0 
             valid_speech = False
+            trigger_greeting = False # 🆕 Flag to trigger the verbal response
             
-            # This holds recent audio locally so we don't send endless silence to the server
             audio_pre_buffer = []
 
             while True:
@@ -155,13 +155,10 @@ def handle_continuous_session(recorder, porcupine, ws, noise_floor):
                     print(f"\n⚠️ Audio read error: {e}")
                     break
 
-                if len(data) < CHUNK * 2:
-                    continue
+                if len(data) < CHUNK * 2: continue
                 
-                try:
-                    volume = max(struct.unpack_from("%dh" % CHUNK, data))
-                except Exception as e:
-                    continue
+                try: volume = max(struct.unpack_from("%dh" % CHUNK, data))
+                except Exception as e: continue
 
                 is_loud = volume > DYNAMIC_THRESHOLD
                 status = "RECORDING" if started_talking else "LISTENING"
@@ -172,7 +169,6 @@ def handle_continuous_session(recorder, porcupine, ws, noise_floor):
                         started_talking = True
                         speech_start_time = time.time()
                         
-                        # 🚀 We just crossed the threshold! Send the pre-buffer so the first syllable isn't cut off.
                         try:
                             for b in audio_pre_buffer:
                                 ws.send(b, opcode=websocket.ABNF.OPCODE_BINARY)
@@ -186,15 +182,12 @@ def handle_continuous_session(recorder, porcupine, ws, noise_floor):
                 
                 # --- ROUTING THE AUDIO ---
                 if started_talking:
-                    # If we are officially talking, stream directly to the server
-                    try:
-                        ws.send(data, opcode=websocket.ABNF.OPCODE_BINARY)
+                    try: ws.send(data, opcode=websocket.ABNF.OPCODE_BINARY)
                     except Exception as e:
                         print(f"\n🔌 Connection dropped during stream: {e}")
                         connection_alive = False
                         break 
                 else:
-                    # If we aren't talking yet, just keep the last 0.5s of audio locally
                     audio_pre_buffer.append(data)
                     if len(audio_pre_buffer) > MAX_PRE_BUFFER_CHUNKS:
                         audio_pre_buffer.pop(0)
@@ -212,12 +205,15 @@ def handle_continuous_session(recorder, porcupine, ws, noise_floor):
                         else:
                             print(f"\n❌ Ignored noise ({total_speech_time:.2f}s)")
                             valid_speech = False
-                            # 🧹 Tell the server to delete the short burst of noise we just sent
                             try: ws.send("CANCEL") 
                             except: pass
                         break 
                 elif not started_talking:
-                    if time.time() - session_timer > SESSION_TIMEOUT:
+                    # 🚀 🆕 THE SMART PAUSE CHECK
+                    if is_first_turn and (time.time() - session_timer > 1.5):
+                        trigger_greeting = True
+                        break 
+                    elif time.time() - session_timer > SESSION_TIMEOUT:
                         print("\n💤 Session Timeout.")
                         play_sfx(SFX_SLEEP)
                         mic_stream.stop_stream()
@@ -231,10 +227,18 @@ def handle_continuous_session(recorder, porcupine, ws, noise_floor):
 
             if not connection_alive: return 
 
-            if valid_speech:
-                print("🚀 Sending COMMIT...")
-                try: ws.send("COMMIT")
-                except Exception as e: return
+            # 🚀 🆕 HANDLE EITHER SPEECH OR A GREETING REQUEST
+            if valid_speech or trigger_greeting:
+                is_first_turn = False # Ensure the greeting only happens once per session
+                
+                if valid_speech:
+                    print("🚀 Sending COMMIT...")
+                    try: ws.send("COMMIT")
+                    except Exception as e: return
+                elif trigger_greeting:
+                    print("\n👋 Requesting Greeting...")
+                    try: ws.send("GREETING")
+                    except Exception as e: return
 
                 print("🤖 Volco Speaking..")
                 
@@ -285,15 +289,15 @@ def handle_continuous_session(recorder, porcupine, ws, noise_floor):
                 
                 if not connection_alive: return 
                 print("\n👂 Ready for next turn...")
-                play_sfx(SFX_WAKE)
-
+                play_sfx(SFX_WAKE) 
+            
     except Exception as e:
         print(f"\n🛑 Critical Session Error: {e}") 
         try: recorder.stop()
         except: pass
         return 
     finally:
-        p.terminate()
+        p.terminate()   
 
 # =============================
 # 🚀 MAIN LOOP
@@ -358,7 +362,6 @@ def main():
                     current_noise = calibrate_mic(duration=0.5)
                     
                     # 3. NOW PLAY SOUND (MEANS "GO!")
-                    play_sfx(SFX_WAKE)
 
                     # 4. START RECORDING
                     handle_continuous_session(recorder, porcupine, ws, current_noise)
