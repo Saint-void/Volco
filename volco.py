@@ -18,7 +18,10 @@ from zeroconf import ServiceInfo, Zeroconf
 # ⚠️ MAKE SURE THIS MATCHES YOUR NGROK
 WS_URL = "wss://exhilaratingly-heaveless-lael.ngrok-free.dev/volco_ws?client_type=device&user_id=sogolo"
 
-PICOVOICE_ACCESS_KEY = "Sl361++BBZqn4rQXFqhoMICzrkMMg13QUDhlBU73myt6WcR93sbZMg==" 
+PICOVOICE_ACCESS_KEY = os.getenv("PICOVOICE_ACCESS_KEY")
+if PICOVOICE_ACCESS_KEY is None:
+    raise ValueError("PICOVOICE_ACCESS_KEY is not set. Check your environment variables.")
+
 PUSH_TO_TALK_KEY = "right shift"
 CUSTOM_WAKE_WORD_PATH = "./assets/Hey-Vella_en_windows_v4_0_0.ppn" 
 
@@ -28,7 +31,7 @@ SFX_SLEEP = "./assets/sounds/sleep.wav"
 REC_FORMAT = pyaudio.paInt16
 REC_CHANNELS = 1
 REC_RATE = 16000
-CHUNK = 512
+CHUNK = 512 
 
 SILENCE_LIMIT = 0.5       
 SAFETY_MARGIN = 500       
@@ -180,7 +183,7 @@ def handle_continuous_session(recorder, porcupine, ws, noise_floor):
                 try: ws.send("COMMIT")
                 except: return
 
-                print("🤖 Volco Speaking.. ")
+                print("🤖 Volco Speaking..")
                 
                 recorder.start()
                 stop_event = threading.Event()
@@ -251,7 +254,7 @@ def main():
     last_ping = time.time()
 
     try:
-        porcupine = pvporcupine.create(access_key=PICOVOICE_ACCESS_KEY, keyword_paths=[CUSTOM_WAKE_WORD_PATH])
+        porcupine = pvporcupine.create(access_key=PICOVOICE_ACCESS_KEY, keyword_paths=[CUSTOM_WAKE_WORD_PATH]) # type: ignore
         recorder = PvRecorder(device_index=-1, frame_length=porcupine.frame_length)
         recorder.start()
 
