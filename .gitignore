@@ -33,7 +33,6 @@ __pycache__/
 # Local SQLite or model storage you don't want in git
 *.db
 *.sqlite3
-models/
 # If you use Weaviate or vector store locally
 vector_data/
 
