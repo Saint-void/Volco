@@ -1,0 +1,69 @@
+import socket
+import time
+import websocket
+from config.config_manager import config
+
+class ConnectionManager:
+    def __init__(self):
+        self.ws_url = config["server"]["ws_url"]
+        self.ws = None
+        self.last_ping = time.time()
+
+    def connect(self):
+        """Attempts to connect to the Vella Server."""
+        print(f"🔌 Connecting to Brain at {self.ws_url}...")
+        try:
+            self.ws = websocket.create_connection(
+                self.ws_url, 
+                ping_interval=15, 
+                ping_timeout=10
+            )
+            print("✅ Brain Connected!")
+            return True
+        except Exception as e:
+            print(f"⚠️ Brain Offline: {e}")
+            self.ws = None
+            return False
+
+    def is_connected(self):
+        """Checks if the socket is alive."""
+        return self.ws is not None and self.ws.connected
+
+    def send_ping(self):
+        """Sends a heartbeat to keep the connection alive."""
+        # Check self.ws directly to satisfy Pylance
+        if self.ws and self.ws.connected and (time.time() - self.last_ping > 20):
+            try:
+                self.ws.send("PING")
+                self.last_ping = time.time()
+            except Exception:
+                self.ws = None # Mark dead
+
+    def send_data(self, data):
+        """Safely sends text or binary data."""
+        # Check self.ws directly to satisfy Pylance
+        if not self.ws or not self.ws.connected: 
+            return False
+            
+        try:
+            if isinstance(data, bytes):
+                self.ws.send_binary(data)
+            else:
+                self.ws.send(data)
+            return True
+        except Exception:
+            self.ws = None
+            return False
+
+    def recv_data(self):
+        """Receives data from the socket."""
+        # Check self.ws directly to satisfy Pylance
+        if not self.ws or not self.ws.connected:
+            raise Exception("Not connected")
+            
+        return self.ws.recv_data()
+
+    def close(self):
+        if self.ws:
+            self.ws.close()
+            self.ws = None
