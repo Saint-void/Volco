@@ -118,7 +118,7 @@ def handle_continuous_session(wake_engine, conn_manager, noise_floor):
                             if msg == "END_OF_RESPONSE" or msg == "NO_SPEECH": 
                                 break
                     except Exception:
-                        conn_manager.ws = None # Mark connection dead
+                        conn_manager.set_offline() # Mark connection dead
                         break 
                 
                 # Cleanup turn
@@ -190,16 +190,13 @@ def main():
                 try:
                     wake_engine.stop()
                     
-                    # Quick Scan
-                    print("🔍 Scanning Environment...")
-                    current_noise_floor = calibrate_mic(duration=0.5)
+                    # ⚡ REMOVED THE SCANNING BOTTLENECK ⚡
                     
                     # Play "Ready" beep
                     play_sfx(config["audio"]["sfx_wake"])
 
-                    # Dive into conversation
+                    # Dive into conversation (uses the noise floor calculated at startup)
                     handle_continuous_session(wake_engine, conn_manager, current_noise_floor)
-                    
                     # Conversation ended, reset to idle
                     wake_engine.start()
                     print("\n✅ VOLCO V2 READY | Waiting for wake word...")

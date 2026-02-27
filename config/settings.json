@@ -9,10 +9,12 @@
     "audio": {
         "sfx_wake": "./assets/sounds/wake.wav",
         "sfx_sleep": "./assets/sounds/sleep.wav",
+        "sfx_connected": "./assets/sounds/connected.wav",       
+        "sfx_disconnected": "./assets/sounds/disconnected.wav",
         "rate": 16000,
         "channels": 1,
         "chunk": 512,
-        "silence_limit": 0.5,
+        "silence_limit": 0.3,
         "safety_margin": 500,
         "session_timeout": 5.0,
         "min_speech_duration": 0.5

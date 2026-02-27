@@ -2,12 +2,25 @@ import socket
 import time
 import websocket
 from config.config_manager import config
+from core.audio_io import play_sfx  
 
 class ConnectionManager:
     def __init__(self):
         self.ws_url = config["server"]["ws_url"]
         self.ws = None
         self.last_ping = time.time()
+
+    # ⚡ NEW: A dedicated method to handle drops cleanly
+    def set_offline(self):
+        """Safely marks the connection as dead and plays the offline sound."""
+        if self.ws is not None:
+            print("\n⚠️ [NETWORK] Brain connection lost!")
+            play_sfx(config["audio"]["sfx_disconnected"])
+            try:
+                self.ws.close()
+            except:
+                pass
+            self.ws = None
 
     def connect(self):
         """Attempts to connect to the Vella Server."""
@@ -19,10 +32,11 @@ class ConnectionManager:
                 ping_timeout=10
             )
             print("✅ Brain Connected!")
+            play_sfx(config["audio"]["sfx_connected"]) # ⚡ NEW: Play success sound
             return True
         except Exception as e:
             print(f"⚠️ Brain Offline: {e}")
-            self.ws = None
+            self.set_offline() # ⚡ NEW: Triggers offline sound
             return False
 
     def is_connected(self):
@@ -31,17 +45,15 @@ class ConnectionManager:
 
     def send_ping(self):
         """Sends a heartbeat to keep the connection alive."""
-        # Check self.ws directly to satisfy Pylance
-        if self.ws and self.ws.connected and (time.time() - self.last_ping > 20):
+        if self.ws and self.ws.connected and (time.time() - self.last_ping > 0.5):
             try:
                 self.ws.send("PING")
                 self.last_ping = time.time()
             except Exception:
-                self.ws = None # Mark dead
+                self.set_offline() # ⚡ NEW: Triggers offline sound
 
     def send_data(self, data):
         """Safely sends text or binary data."""
-        # Check self.ws directly to satisfy Pylance
         if not self.ws or not self.ws.connected: 
             return False
             
@@ -52,18 +64,15 @@ class ConnectionManager:
                 self.ws.send(data)
             return True
         except Exception:
-            self.ws = None
+            self.set_offline() # ⚡ NEW: Triggers offline sound
             return False
 
     def recv_data(self):
         """Receives data from the socket."""
-        # Check self.ws directly to satisfy Pylance
         if not self.ws or not self.ws.connected:
             raise Exception("Not connected")
             
         return self.ws.recv_data()
 
     def close(self):
-        if self.ws:
-            self.ws.close()
-            self.ws = None
+        self.set_offline()
