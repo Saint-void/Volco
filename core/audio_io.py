@@ -3,28 +3,29 @@ import sys
 import time
 import struct
 import pyaudio
-import wave
+import platform
+import subprocess
 from config.config_manager import config
 
-def play_sfx(filename):
-    """Plays a sound effect synchronously."""
+def play_sfx(filename, async_play=False):
+    """Plays a sound using OS-level mixers to prevent PyAudio lockups."""
     if not os.path.exists(filename): 
         print(f"⚠️ Missing sound file: {filename}")
         return
+        
     try:
-        wf = wave.open(filename, 'rb')
-        p = pyaudio.PyAudio()
-        stream = p.open(format=p.get_format_from_width(wf.getsampwidth()),
-                        channels=wf.getnchannels(), 
-                        rate=wf.getframerate(), 
-                        output=True)
-        data = wf.readframes(1024)
-        while data:
-            stream.write(data)
-            data = wf.readframes(1024)
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
+        if platform.system() == "Windows":
+            import winsound
+            flags = winsound.SND_FILENAME
+            if async_play:
+                flags |= winsound.SND_ASYNC  # Plays in background
+            winsound.PlaySound(filename, flags)
+        else:
+            # Future-proofed for your Raspberry Pi (Linux)
+            if async_play:
+                subprocess.Popen(["aplay", "-q", filename], stderr=subprocess.DEVNULL)
+            else:
+                subprocess.run(["aplay", "-q", filename], stderr=subprocess.DEVNULL)
     except Exception as e:
         print(f"⚠️ SFX Error: {e}")
 
@@ -70,7 +71,6 @@ def calibrate_mic(duration=1.0):
     stream.close()
     p.terminate()
     
-    # Safety fallback so it doesn't trigger on zero
     if max_noise < 100: 
         max_noise = 100
         

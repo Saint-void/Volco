@@ -3,8 +3,9 @@
         "ws_url": "wss://exhilaratingly-heaveless-lael.ngrok-free.dev/volco_ws?client_type=device&user_id=sogolo"
     },
     "picovoice": {
-        "keyword_path": "./assets/models/vella wakeup.ppn",
-        "access_key": "VqN3lLJKQRDRpZSknoCQYCJ9VWbgbVCK14Dej0anep/W+pbkVCxfcw=="
+        "access_key": "Sl361++BBZqn4rQXFqhoMICzrkMMg13QUDhlBU73myt6WcR93sbZMg==",
+        "keyword_path": "./assets/models/Hey-Vella_en_windows_v4_0_0.ppn"
+
     },
     "audio": {
         "sfx_wake": "./assets/sounds/wake.wav",
@@ -15,7 +16,7 @@
         "channels": 1,
         "chunk": 512,
         "silence_limit": 0.3,
-        "safety_margin": 500,
+        "safety_margin": 200,
         "session_timeout": 5.0,
         "min_speech_duration": 0.5
     }

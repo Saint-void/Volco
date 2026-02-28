@@ -4,6 +4,7 @@ import keyboard
 import pyaudio
 import threading
 import websocket
+
 from config.config_manager import config
 from core.audio_io import play_sfx, print_audio_meter, calibrate_mic
 from core.wake_word import WakeWordEngine
@@ -102,7 +103,13 @@ def handle_continuous_session(wake_engine, conn_manager, noise_floor):
                 t = threading.Thread(target=watch_for_interrupt)
                 t.start()
 
-                speaker_stream = p.open(format=pyaudio.paInt16, channels=1, rate=22050, output=True)
+                # ⚡ Force TTS to play through the specific Device ID from config
+                device_id = config["audio"].get("output_device_index")
+                speaker_stream = p.open(format=pyaudio.paInt16, 
+                                        channels=1, 
+                                        rate=22050, 
+                                        output=True,
+                                        output_device_index=device_id)
                 
                 while True:
                     if stop_event.is_set(): break
@@ -188,9 +195,13 @@ def main():
                 # 2. --- WAKE SEQUENCE ---
                 try:
                     wake_engine.stop()
+                    
+                    # ⚡ ADDED BACK: Play "Ready" beep instantly in the background
+                    play_sfx(config["audio"]["sfx_wake"], async_play=True)
 
                     # Dive into conversation (uses the noise floor calculated at startup)
                     handle_continuous_session(wake_engine, conn_manager, current_noise_floor)
+                    
                     # Conversation ended, reset to idle
                     wake_engine.start()
                     print("\n✅ VOLCO V2 READY | Waiting for wake word...")
