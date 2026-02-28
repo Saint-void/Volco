@@ -1,0 +1,2 @@
+"keyword_path": "./assets/models/vella wakeup.ppn",
+"access_key": "VqN3lLJKQRDRpZSknoCQYCJ9VWbgbVCK14Dej0anep/W+pbkVCxfcw=="

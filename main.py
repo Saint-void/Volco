@@ -4,7 +4,6 @@ import keyboard
 import pyaudio
 import threading
 import websocket
-
 from config.config_manager import config
 from core.audio_io import play_sfx, print_audio_meter, calibrate_mic
 from core.wake_word import WakeWordEngine
@@ -189,11 +188,6 @@ def main():
                 # 2. --- WAKE SEQUENCE ---
                 try:
                     wake_engine.stop()
-                    
-                    # ⚡ REMOVED THE SCANNING BOTTLENECK ⚡
-                    
-                    # Play "Ready" beep
-                    play_sfx(config["audio"]["sfx_wake"])
 
                     # Dive into conversation (uses the noise floor calculated at startup)
                     handle_continuous_session(wake_engine, conn_manager, current_noise_floor)
