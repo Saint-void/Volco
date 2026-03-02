@@ -10,12 +10,11 @@ class ConnectionManager:
         self.ws = None
         self.last_ping = time.time()
 
-    # ⚡ NEW: A dedicated method to handle drops cleanly
     def set_offline(self):
         """Safely marks the connection as dead and plays the offline sound."""
         if self.ws is not None:
             print("\n⚠️ [NETWORK] Brain connection lost!")
-            play_sfx(config["audio"]["sfx_disconnected"])
+            play_sfx(config["audio"]["sfx_disconnected"], async_play=True)
             try:
                 self.ws.close()
             except:
@@ -32,11 +31,11 @@ class ConnectionManager:
                 ping_timeout=10
             )
             print("✅ Brain Connected!")
-            play_sfx(config["audio"]["sfx_connected"]) # ⚡ NEW: Play success sound
+            play_sfx(config["audio"]["sfx_connected"], async_play=True)
             return True
         except Exception as e:
             print(f"⚠️ Brain Offline: {e}")
-            self.set_offline() # ⚡ NEW: Triggers offline sound
+            self.set_offline()
             return False
 
     def is_connected(self):
@@ -45,12 +44,12 @@ class ConnectionManager:
 
     def send_ping(self):
         """Sends a heartbeat to keep the connection alive."""
-        if self.ws and self.ws.connected and (time.time() - self.last_ping > 0.5):
+        if self.ws and self.ws.connected and (time.time() - self.last_ping > 2):
             try:
                 self.ws.send("PING")
                 self.last_ping = time.time()
             except Exception:
-                self.set_offline() # ⚡ NEW: Triggers offline sound
+                self.set_offline()
 
     def send_data(self, data):
         """Safely sends text or binary data."""
@@ -64,7 +63,7 @@ class ConnectionManager:
                 self.ws.send(data)
             return True
         except Exception:
-            self.set_offline() # ⚡ NEW: Triggers offline sound
+            self.set_offline() 
             return False
 
     def recv_data(self):

@@ -46,6 +46,35 @@ graph TD
 
 ```
 
+VOLCO/
+│
+├── main.py                 # THE DISPATCHER: Listen for Wake Word / Buttons
+├── test_audio.py           # Hardware debugger
+│
+├── config/                 # Shared settings (server URLs, API keys, etc.)
+│   ├── settings.json       
+│   └── config_manager.py   
+│
+├── core/                   # SHARED HARDWARE DRIVERS
+│   ├── audio_io.py         # Shared Mic/Speaker control
+│   ├── connection.py       # Brain (Server) communication
+│   └── wake_word.py        # Constant wake word listener
+│
+├── modes/                  # ⚡ THE TWO PERSONALITIES
+│   │
+│   ├── ai_mode/            # THE SMART BRAIN
+│   │   ├── session.py      # Logic for Vella conversation (the current logic)
+│   │   └── action_handler.py # Handles specific AI triggers (Spotify, Calls)
+│   │
+│   └── bt_mode/            # THE DUMB HEADPHONE
+│       ├── media_sink.py   # Handles incoming Bluetooth audio from phone
+│       └── avrcp_control.py # Handles Play/Pause/Skip commands
+│
+└── assets/                 # Shared UI Sounds and Models
+    ├── models/             
+    └── sounds/
+
+
 ---
 
 ## 📂 Project Structure
