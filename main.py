@@ -15,16 +15,23 @@ from modes.bt_mode.media_control import pause_media, resume_media
 def main():
     print("\n--- VOLCO OS INITIALIZATION ---")
     
-    # 1. Turn on Bluetooth so the user's phone can connect
-    enable_bluetooth_pairing()
+    # ⚡ 1. Start speaking in the background
+    play_sfx("./assets/sounds/boot.wav", async_play=True)
     
-    # 2. Calibrate microphones for the AI
-    current_noise_floor = calibrate_mic(duration=1.0)
-
-    # 3. Connect to Vella Server
+    # 2. Do the heavy lifting in the background
     wake_engine = WakeWordEngine()
     conn_manager = ConnectionManager()
     conn_manager.connect()
+
+    # ⚡ 3. THE TRAFFIC LIGHT: Give the boot voice time to finish!
+    # If your boot.wav is exactly 1 second long, wait 1.2 seconds just to be safe.
+    time.sleep(1.2) 
+
+    # 4. Turn on Bluetooth (This triggers bt_pairing.wav)
+    enable_bluetooth_pairing()
+    
+    # 5. Calibrate the microphone
+    current_noise_floor = calibrate_mic(duration=1.0)
 
     print(f"\n✅ VOLCO OS READY | Waiting for wake word or 'Space' button...")
     
@@ -55,7 +62,7 @@ def main():
                     print("🔌 Connection lost. Attempting reconnect...")
                     if not conn_manager.connect():
                         print("❌ Failed to reconnect.")
-                        play_sfx(config["audio"]["sfx_sleep"], async_play=True)
+                        play_sfx(config["audio"]["sfx_offline"], async_play=True)
                         continue
                 
                 try:
@@ -85,11 +92,13 @@ def main():
 
     except KeyboardInterrupt:
         print("\n👋 Shutting down Volco OS...")
+        # ⚡ VUI 2: The Shutdown Sequence (async_play=False so it doesn't instantly close before playing)
+        play_sfx("./assets/sounds/shutdown.wav", async_play=False)
     finally:
         conn_manager.close()
         wake_engine.cleanup()
 
-if __name__ == "__main__":
+if __name__ == "__main__":                                  
     while True:
         try:
             main()

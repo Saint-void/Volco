@@ -14,24 +14,17 @@ class ConnectionManager:
         """Safely marks the connection as dead and plays the offline sound."""
         if self.ws is not None:
             print("\n⚠️ [NETWORK] Brain connection lost!")
-            play_sfx(config["audio"]["sfx_disconnected"], async_play=True)
-            try:
-                self.ws.close()
-            except:
-                pass
-            self.ws = None
+            # ⚡ Update this to a voice line like "Server disconnected"
+            play_sfx("./assets/sounds/shutdown.wav", async_play=True)
 
     def connect(self):
         """Attempts to connect to the Vella Server."""
         print(f"🔌 Connecting to Brain at {self.ws_url}...")
         try:
-            self.ws = websocket.create_connection(
-                self.ws_url, 
-                ping_interval=15, 
-                ping_timeout=10
-            )
+            self.ws = websocket.create_connection(self.ws_url, ping_interval=15, ping_timeout=10)
             print("✅ Brain Connected!")
-            play_sfx(config["audio"]["sfx_connected"], async_play=True)
+            # ⚡ Update this to your new "Systems online" or "Server connected" voice file
+            play_sfx("./assets/sounds/bt_connected.wav", async_play=True)
             return True
         except Exception as e:
             print(f"⚠️ Brain Offline: {e}")

@@ -62,7 +62,7 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 else:
                     if time.time() - session_timer > config["audio"]["session_timeout"]:
                         print("\n💤 Session Timeout.")
-                        play_sfx(config["audio"]["sfx_sleep"], async_play=True)
+                        play_sfx(config["audio"]["session_end"], async_play=True)
                         mic_stream.stop_stream()
                         mic_stream.close()
                         return 
