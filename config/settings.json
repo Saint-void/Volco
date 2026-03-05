@@ -3,7 +3,7 @@
         "ws_url": "ws://127.0.0.1:8001/volco_ws?client_type=device&user_id=sogolo"
     },
     "picovoice": {
-        "keyword_path": "./assets/models/vella wakeup.ppn",
+        "keyword_path": "./assets/models/vella_wakeup.ppn",
         "access_key": "VqN3lLJKQRDRpZSknoCQYCJ9VWbgbVCK14Dej0anep/W+pbkVCxfcw=="
     },
     "audio": {
