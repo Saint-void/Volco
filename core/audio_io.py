@@ -16,9 +16,13 @@ def play_sfx(filename, async_play=False):
     try:
         if platform.system() == "Windows":
             import winsound
-            flags = winsound.SND_FILENAME
+            flags = winsound.SND_FILENAME   
             if async_play:
                 flags |= winsound.SND_ASYNC  # Plays in background
+            
+            # ⚡ Prevents the default Windows error 'Ding'
+            flags |= winsound.SND_NODEFAULT 
+            
             winsound.PlaySound(filename, flags)
         else:
             # Future-proofed for your Raspberry Pi (Linux)
@@ -40,7 +44,13 @@ def print_audio_meter(volume, threshold, is_active, status_text="LISTENING"):
     sys.stdout.flush()
 
 def calibrate_mic(duration=1.0):
-    """Measures room noise and returns the baseline noise floor."""
+    """Measures room noise and returns the baseline noise floor using smart averaging."""
+    
+    # ⚡ FIX 1: Give the system 1.5 seconds to finish playing any boot/connection sounds
+    if duration > 0.6: 
+        time.sleep(1.5)
+        print("\n🤫 Measuring room noise...")
+        
     chunk = config["audio"]["chunk"]
     p = pyaudio.PyAudio()
     
@@ -52,17 +62,13 @@ def calibrate_mic(duration=1.0):
         frames_per_buffer=chunk
     )
     
-    if duration > 0.6: 
-        print("\n🤫 Measuring room noise...")
-    
-    max_noise = 0
+    volumes = []
     start = time.time()
     
     while time.time() - start < duration:
         data = stream.read(chunk, exception_on_overflow=False)
         peak = max(struct.unpack_from("%dh" % chunk, data))
-        if peak > max_noise: 
-            max_noise = peak
+        volumes.append(peak)
             
         if duration > 0.6: 
             print_audio_meter(peak, 0, False, "CALIBRATING")
@@ -71,11 +77,21 @@ def calibrate_mic(duration=1.0):
     stream.close()
     p.terminate()
     
-    if max_noise < 100: 
-        max_noise = 100
+    # ⚡ FIX 2: Sort the volumes and throw away the top 20% (removes sudden spikes/pops)
+    # Then take the average of what is left to get the TRUE room baseline.
+    volumes.sort()
+    valid_volumes = volumes[:int(len(volumes) * 0.8)] 
+    
+    if not valid_volumes:
+        noise_floor = 100 # Fallback 
+    else:
+        noise_floor = int(sum(valid_volumes) / len(valid_volumes))
+        
+    # Ensure it never drops below a safe hardware baseline
+    noise_floor = max(noise_floor, 100)
         
     safety_margin = config["audio"]["safety_margin"]
     if duration > 0.6: 
-        print(f"\n✅ Noise Floor: {max_noise} | Trig: {max_noise + safety_margin}\n")
+        print(f"\n✅ Noise Floor: {noise_floor} | Trig: {noise_floor + safety_margin}\n")
         
-    return max_noise
+    return noise_floor
