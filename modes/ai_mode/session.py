@@ -3,7 +3,6 @@ import struct
 import keyboard
 import pyaudio
 import threading
-import websocket
 
 from config.config_manager import config
 from core.audio_io import play_sfx, print_audio_meter
@@ -14,7 +13,7 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
     
     chunk = config["audio"]["chunk"]
     rate = config["audio"]["rate"]
-    channels = config["audio"]["channels"]
+    channels = config["audio"]["channels"]  
     dynamic_threshold = noise_floor + config["audio"]["safety_margin"]
     
     print(f"\n🧠 [AI MODE] Adaptive Threshold set to: {dynamic_threshold}")
@@ -73,6 +72,7 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
             if not conn_manager.is_connected(): return
 
             # --- PHASE 2: SPEAK ---
+            # --- PHASE 2: SPEAK ---
             if valid_speech:
                 print("🚀 Sending COMMIT...")
                 if not conn_manager.send_data("COMMIT"): return
@@ -108,14 +108,21 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                         opcode, data = conn_manager.recv_data()
                         if stop_event.is_set(): break
                         
-                        if opcode == websocket.ABNF.OPCODE_BINARY:
+                        # ⚡ UDP AUDIO CHUNKS (Opcode 2)
+                        if opcode == 2: 
                             speaker_stream.write(data)
-                        elif opcode == websocket.ABNF.OPCODE_TEXT:
-                            msg = data.decode('utf-8')
+                            
+                        # ⚡ UDP TEXT COMMANDS (Opcode 1)
+                        elif opcode == 1: 
+                            # WebRTC already gives us a native Python string, no decoding needed!
+                            msg = data 
                             if msg == "END_OF_RESPONSE" or msg == "NO_SPEECH": 
                                 break
-                    except Exception:
-                        conn_manager.set_offline() 
+                                
+                    except Exception as e:
+                        # ⚡ We will never be blinded by a silent error again!
+                        print(f"\n❌ [PLAYBACK ERROR] {e}")
+                        conn_manager.set_offline(f"Playback Error: {e}") 
                         break 
                 
                 stop_event.set()

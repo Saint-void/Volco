@@ -15,25 +15,25 @@ from modes.bt_mode.media_control import pause_media, resume_media
 def main():
     print("\n--- VOLCO OS INITIALIZATION ---")
     
-    # ⚡ 1. Start speaking in the background
+    # ⚡ 1. The Boot Sound
     play_sfx("./assets/sounds/boot.wav", async_play=True)
+    time.sleep(1.2) # Give the voice a second to finish speaking
     
-    # 2. Do the heavy lifting in the background
+    # ⚡ 2. START BLUETOOTH FIRST!
+    # Your phone will see Volco immediately, even if the AI takes 10 seconds to connect.
+    enable_bluetooth_pairing()
+
+    # ⚡ 3. Load the Wake Engine (Takes ~2 seconds)
     wake_engine = WakeWordEngine()
+    
+    # ⚡ 4. Connect to Vella Server (Takes ~2 to 10 seconds for WebRTC)
     conn_manager = ConnectionManager()
     conn_manager.connect()
 
-    # ⚡ 3. THE TRAFFIC LIGHT: Give the boot voice time to finish!
-    # If your boot.wav is exactly 1 second long, wait 1.2 seconds just to be safe.
-    time.sleep(1.2) 
-
-    # 4. Turn on Bluetooth (This triggers bt_pairing.wav)
-    enable_bluetooth_pairing()
-    
-    # 5. Calibrate the microphone
+    # ⚡ 5. Calibrate the microphone (Wait until the end so the room is quiet)
     current_noise_floor = calibrate_mic(duration=1.0)
 
-    print(f"\n✅ VOLCO OS READY | Waiting for wake word or 'Space' button...")
+    print(f"\n✅ VOLCO OS READY | Waiting for wake word or 'Space' button...") 
     
     try:
         wake_engine.start()
@@ -81,7 +81,7 @@ def main():
                     # Reset OS back to idle
                     wake_engine.start()
                     # A small sleep prevents holding the spacebar from triggering it twice instantly
-                    time.sleep(0.5) 
+                    time.sleep(0.5)   
                     print("\n✅ VOLCO OS READY | Waiting for wake word or button...")
                     
                 except Exception as e:
