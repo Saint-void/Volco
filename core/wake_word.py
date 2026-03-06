@@ -68,3 +68,13 @@ class WakeWordEngine:
             except: 
                 pass
             self.audio_stream = None
+
+    def cleanup(self):
+        """Safely shuts down the engine and frees memory."""
+        self.stop()
+        if self.porcupine is not None:
+            try:
+                self.porcupine.delete()
+            except Exception:
+                pass
+            self.porcupine = None

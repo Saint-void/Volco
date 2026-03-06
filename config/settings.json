@@ -1,6 +1,6 @@
 {
     "server": {
-        "ws_url": "ws://127.0.0.1:8001/volco_ws?client_type=device&user_id=sogolo"
+            "ws_url": "wss://exhilaratingly-heaveless-lael.ngrok-free.dev/volco_ws?client_type=device&user_id=sogolo"
     },
     "picovoice": {
         "access_key": "Sl361++BBZqn4rQXFqhoMICzrkMMg13QUDhlBU73myt6WcR93sbZMg==",
