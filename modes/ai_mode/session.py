@@ -1,8 +1,28 @@
 import time
 import struct
-import keyboard
 import pyaudio
 import threading
+import platform
+import sys
+
+# ⚡ THE SMART OS CHECKER
+IS_WINDOWS = platform.system() == "Windows"
+if IS_WINDOWS:
+    import keyboard
+else:
+    import select
+
+def is_button_pressed():
+    """Checks for Space/Shift on Windows, or the 'Enter' key on Linux."""
+    if IS_WINDOWS:
+        return keyboard.is_pressed("space") or keyboard.is_pressed("right shift")
+    else:
+        # Non-blocking check to see if 'Enter' was pressed in the Linux terminal
+        i, _, _ = select.select([sys.stdin], [], [], 0.0)
+        if i:
+            sys.stdin.readline() # Clear the buffer
+            return True
+        return False
 
 from config.config_manager import config
 from core.audio_io import play_sfx, print_audio_meter
@@ -72,12 +92,11 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
             if not conn_manager.is_connected(): return
 
             # --- PHASE 2: SPEAK ---
-            # --- PHASE 2: SPEAK ---
             if valid_speech:
                 print("🚀 Sending COMMIT...")
                 if not conn_manager.send_data("COMMIT"): return
 
-                print("🤖 Volco Speaking... (Say 'Hey Vella' to Interrupt)")
+                print("🤖 Volco Speaking... (Press 'Enter' to Interrupt)")
                 
                 wake_engine.start() 
                 stop_event = threading.Event()
@@ -88,7 +107,8 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                         if is_detected:
                             print("\n🛑 INTERRUPT TRIGGERED (Voice)!")
                             stop_event.set()
-                        if keyboard.is_pressed("right shift"): 
+                        # ⚡ UPDATED: Using our smart OS checker instead of strict keyboard!
+                        if is_button_pressed(): 
                             print("\n🛑 INTERRUPT TRIGGERED (Button)!")
                             stop_event.set()
 
@@ -114,13 +134,11 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                             
                         # ⚡ UDP TEXT COMMANDS (Opcode 1)
                         elif opcode == 1: 
-                            # WebRTC already gives us a native Python string, no decoding needed!
                             msg = data 
                             if msg == "END_OF_RESPONSE" or msg == "NO_SPEECH": 
                                 break
                                 
                     except Exception as e:
-                        # ⚡ We will never be blinded by a silent error again!
                         print(f"\n❌ [PLAYBACK ERROR] {e}")
                         conn_manager.set_offline(f"Playback Error: {e}") 
                         break 
