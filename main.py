@@ -1,10 +1,31 @@
 import time
-import keyboard # ⚡ NEW: Import keyboard for the physical button
+import platform
+import sys
+import select
+
+# ⚡ THE SMART OS CHECKER (Replaces 'import keyboard')
+IS_WINDOWS = platform.system() == "Windows"
+keyboard = None
+if IS_WINDOWS:
+    import keyboard
+
+def check_for_button():
+    """Checks for Space/Shift on Windows, or the 'Enter' key on Linux."""
+    if IS_WINDOWS and keyboard is not None:
+        return keyboard.is_pressed("space") or keyboard.is_pressed("right shift")
+    else:
+        # Non-blocking check for the Enter key on Linux
+        i, _, _ = select.select([sys.stdin], [], [], 0.0)
+        if i:
+            sys.stdin.readline() 
+            return True
+        return False
+
 from config.config_manager import config
 from core.audio_io import play_sfx, calibrate_mic
 from core.wake_word import WakeWordEngine
 from core.connection import ConnectionManager
-from core.bluetooth_pairing import enable_bluetooth_pairing # ⚡ NEW: Import Bluetooth manager
+from core.bluetooth_pairing import enable_bluetooth_pairing 
 
 from modes.ai_mode.session import start_ai_session
 from modes.bt_mode.media_control import pause_media, resume_media
@@ -21,20 +42,19 @@ def main():
     time.sleep(1.2) # Give the voice a second to finish speaking
     
     # ⚡ 2. START BLUETOOTH FIRST!
-    # Your phone will see Volco immediately, even if the AI takes 10 seconds to connect.
     enable_bluetooth_pairing()
 
-    # ⚡ 3. Load the Wake Engine (Takes ~2 seconds)
+    # ⚡ 3. Load the Wake Engine
     wake_engine = WakeWordEngine()
     
-    # ⚡ 4. Connect to Vella Server (Takes ~2 to 10 seconds for WebRTC)
+    # ⚡ 4. Connect to Vella Server
     conn_manager = ConnectionManager()
     conn_manager.connect()
 
-    # ⚡ 5. Calibrate the microphone (Wait until the end so the room is quiet)
+    # ⚡ 5. Calibrate the microphone
     current_noise_floor = calibrate_mic(duration=1.0)
 
-    print(f"\n✅ VOLCO OS READY | Waiting for wake word or 'Space' button...") 
+    print(f"\n✅ VOLCO OS READY | Waiting for wake word or button press...") 
     
     try:
         wake_engine.start()
@@ -46,12 +66,12 @@ def main():
             # 🎧 Listen for Wake Word
             is_wake_word, pcm = wake_engine.read_and_process()
             
-            # 🔘 Listen for Physical Button Press (Simulating a hardware button on the headset)
-            is_button_pressed = keyboard.is_pressed("space")
+            # 🔘 Listen for Physical Button Press using our Smart Checker
+            button_triggered = check_for_button()
             
             # ⚡ TRIGGER IF EITHER ONE HAPPENS
-            if is_wake_word or is_button_pressed:
-                trigger_type = "BUTTON" if is_button_pressed else "VOICE"
+            if is_wake_word or button_triggered:
+                trigger_type = "BUTTON" if button_triggered else "VOICE"
                 print(f"\n⚡ WAKE TRIGGERED ({trigger_type})!")
                 
                 # Network Check
@@ -81,7 +101,6 @@ def main():
                     
                     # Reset OS back to idle
                     wake_engine.start()
-                    # A small sleep prevents holding the spacebar from triggering it twice instantly
                     time.sleep(0.5)   
                     print("\n✅ VOLCO OS READY | Waiting for wake word or button...")
                     
@@ -93,7 +112,6 @@ def main():
 
     except KeyboardInterrupt:
         print("\n👋 Shutting down Volco OS...")
-        # ⚡ VUI 2: The Shutdown Sequence (async_play=False so it doesn't instantly close before playing)
         play_sfx("./assets/sounds/shutdown.wav", async_play=False)
     finally:
         conn_manager.close()
@@ -105,4 +123,4 @@ if __name__ == "__main__":
             main()
         except BaseException as e:
             print(f"🔄 Hard Restart Triggered: {e}")
-            time.sleep(2)                                      
+            time.sleep(2)
