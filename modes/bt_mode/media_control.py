@@ -1,76 +1,41 @@
-import time
-import platform
-import ctypes
-import asyncio
+import subprocess
 
-# ⚡ MEMORY: Volco will remember if it was the one who interrupted the music
-_was_playing_before_hijack = False
-
-def is_windows_music_playing():
-    """Asks the Windows OS if any app (Spotify, Chrome) is currently playing audio."""
-    try:
-        from winsdk.windows.media.control import GlobalSystemMediaTransportControlsSessionManager as MediaManager
-        
-        async def get_state():
-            sessions = await MediaManager.request_async()
-            current_session = sessions.get_current_session()
-            if current_session:
-                info = current_session.get_playback_info()
-                # ⚡ THE FIX: Ensure 'info' isn't None before checking its status
-                if info: 
-                    return info.playback_status == 4  
-            return False
-            
-        return asyncio.run(get_state())
-    except ImportError:
-        print("⚠️ [BT MODE] 'winsdk' not installed. Falling back to blind toggle.")
-        return True 
-    except Exception as e:
-        return False # ⚡ Default to False on any weird OS errors so we don't accidentally play music
-
-def toggle_media():
-    """Sends the raw OS hardware code to press the Play/Pause button."""
-    VK_MEDIA_PLAY_PAUSE = 0xB3
-    ctypes.windll.user32.keybd_event(VK_MEDIA_PLAY_PAUSE, 0, 0, 0)
-    ctypes.windll.user32.keybd_event(VK_MEDIA_PLAY_PAUSE, 0, 2, 0)
+# ⚡ VOLCO'S SHORT-TERM MEMORY
+# This remembers if music was actually playing before the AI woke up
+_was_playing = False
 
 def pause_media():
-    """Smart pause: Only pauses if music is actually playing."""
-    global _was_playing_before_hijack
-    print("⏸️  [BT MODE] Checking media state...")
+    """Checks if music is playing, pauses it, and remembers the state."""
+    global _was_playing
+    _was_playing = False # Reset memory for the new session
     
-    if platform.system() == "Windows":
-        _was_playing_before_hijack = is_windows_music_playing()
+    try:
+        # Ask Linux what the current media status is (Playing, Paused, or Stopped)
+        result = subprocess.run(["playerctl", "status"], capture_output=True, text=True, check=False)
+        status = result.stdout.strip()
         
-        if _was_playing_before_hijack:
-            print("⏸️  [BT MODE] Music is playing. Pausing now...")
-            toggle_media()
+        if status == "Playing":
+            print("⏸️  [BT MODE] Music is playing. Pausing for Vella...")
+            _was_playing = True
+            subprocess.run(["playerctl", "pause"], check=False, stderr=subprocess.DEVNULL)
         else:
-            print("⏸️  [BT MODE] Silence detected. Leaving media alone.")
-    else:
-        # ⚡ For the Raspberry Pi: We use an explicit 'pause' command, not a toggle!
-        import subprocess
-        _was_playing_before_hijack = True 
-        subprocess.run(["playerctl", "pause"], check=False, stderr=subprocess.DEVNULL)
-        
-    time.sleep(0.5)
+            print(f"⏸️  [BT MODE] Media is {status or 'Stopped'}. Leaving it alone.")
+            
+    except Exception as e:
+        print(f"⚠️ [BT MODE] Pause check failed: {e}")
 
 def resume_media():
-    """Smart resume: Only plays if Volco was the one who paused it."""
-    global _was_playing_before_hijack
+    """Only resumes music if Volco was the one who interrupted it."""
+    global _was_playing
     
-    if not _was_playing_before_hijack:
-        print("▶️  [BT MODE] Music was paused before we started. Leaving it paused.")
-        return
-        
-    print("▶️  [BT MODE] Conversation over. Resuming music...")
-    if platform.system() == "Windows":
-        toggle_media()
+    if _was_playing:
+        print("▶️  [BT MODE] Conversation over. Resuming music...")
+        try:
+            subprocess.run(["playerctl", "play"], check=False, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            print(f"⚠️ [BT MODE] Resume failed: {e}")
     else:
-        # ⚡ For the Raspberry Pi: Explicit 'play' command
-        import subprocess
-        subprocess.run(["playerctl", "play"], check=False, stderr=subprocess.DEVNULL)
-    
-    time.sleep(0.5)
-    # Wipe the memory for the next interaction
-    _was_playing_before_hijack = False
+        print("▶️  [BT MODE] Music wasn't playing before. Staying quiet.")
+        
+    # Wipe the memory clean for the next time
+    _was_playing = False
