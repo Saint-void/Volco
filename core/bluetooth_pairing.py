@@ -1,25 +1,22 @@
 import subprocess
-import platform
-import time
-from core.audio_io import play_sfx
 
 def enable_bluetooth_pairing():
-    """Turns on the Bluetooth chip and makes Volco discoverable to your phone."""
-    print("📡 [BT MODE] Initializing Bluetooth...")
+    """Sets the Pi to headless mode and makes it discoverable."""
+    print("📡 [BT MODE] Initializing Bluetooth (No-PIN Mode)...")
     
-    # ⚡ VUI 3: The Pairing Announcement
-    play_sfx("./assets/sounds/bt_pairing.wav", async_play=True)
-    
-    if platform.system() == "Windows":
-        print("⚠️ [BT MODE] Windows PC detected. Simulating Bluetooth Discoverability.")
-        return
-
-    # Raspberry Pi Zero 2W Hardware Code
     try:
-        subprocess.run(["bluetoothctl", "power", "on"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(["bluetoothctl", "discoverable", "on"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(["bluetoothctl", "pairable", "on"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # ⚡ 1. Tell Linux we have no screen or keyboard for PINs
+        subprocess.run(["bluetoothctl", "agent", "NoInputNoOutput"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["bluetoothctl", "default-agent"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
-        print("✅ [BT MODE] Volco is now visible on your phone's Bluetooth menu!")
+        # ⚡ 2. Turn on the Bluetooth radio
+        subprocess.run(["bluetoothctl", "power", "on"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # ⚡ 3. Open the gates for pairing
+        subprocess.run(["bluetoothctl", "pairable", "on"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["bluetoothctl", "discoverable", "on"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        print("✅ [BT MODE] Volco is now visible and will pair without a PIN!")
+        
     except Exception as e:
-        print(f"❌ [BT MODE] Failed to initialize Bluetooth hardware: {e}")
+        print(f"⚠️ [BT MODE] Bluetooth initialization failed: {e}")
