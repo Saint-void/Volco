@@ -48,6 +48,10 @@ class ConnectionManager:
             self.webrtc_thread.start()
             time.sleep(0.5) 
         
+        # ⚡ PYLANCE FIX: Prove loop exists before using it
+        if self.loop is None:
+            return False
+
         future = asyncio.run_coroutine_threadsafe(self._async_connect(), self.loop)
         success = self.connected_event.wait(timeout=20.0)
         
@@ -82,8 +86,12 @@ class ConnectionManager:
 
             @self.pc.on("connectionstatechange")
             async def on_connectionstatechange():
+                # ⚡ PYLANCE FIX: Safety check for self.pc
+                if self.pc is None:
+                    return
+                    
                 if self.pc.connectionState in ["failed", "closed"]:
-                    # ⚡ TRACE: Did the WebRTC state crash?
+                    # TRACE: Did the WebRTC state crash?
                     self.set_offline(f"WebRTC Status changed to: {self.pc.connectionState}")
 
             offer = await self.pc.createOffer()
@@ -95,11 +103,14 @@ class ConnectionManager:
                 "user_id": "sogolo"
             }
             
+            # ⚡ PYLANCE FIX: Use the strict aiohttp timeout object
             async with aiohttp.ClientSession() as session:
-                async with session.post(self.signaling_url, json=payload, timeout=20.0) as resp:
+                timeout = aiohttp.ClientTimeout(total=20.0)
+                async with session.post(self.signaling_url, json=payload, timeout=timeout) as resp:
                     if resp.status != 200:
-                        self.connected_event.set()
-                        return
+                        raise Exception(f"Bad Gateway or Server Error: {resp.status}")
+                    
+                    # ⚡ REPAIRED BLOCK: This was missing in your paste!
                     answer_data = await resp.json()
 
             answer = RTCSessionDescription(sdp=answer_data["sdp"], type=answer_data["type"])
@@ -115,6 +126,7 @@ class ConnectionManager:
             self.connected_event.set()
 
         except Exception as e:
+            print(f"⚠️ WebRTC Connection Error: {e}")
             self.connected_event.set()
 
     def is_connected(self):
@@ -127,6 +139,10 @@ class ConnectionManager:
 
     def send_data(self, data):
         if not self.is_connected(): return False
+        
+        # ⚡ PYLANCE FIX: Prove loop exists before sending
+        if self.loop is None: return False
+        
         asyncio.run_coroutine_threadsafe(self._async_send(data), self.loop)
         return True
 

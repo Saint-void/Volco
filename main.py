@@ -2,6 +2,7 @@ import time
 import platform
 import sys
 import select
+import threading # ⚡ Added for instant background tasks
 
 # ⚡ THE SMART OS CHECKER (Replaces 'import keyboard')
 IS_WINDOWS = platform.system() == "Windows"
@@ -58,7 +59,7 @@ def main():
     
     try:
         wake_engine.start()
-        
+            
         while True:
             # Heartbeat
             conn_manager.send_ping()
@@ -89,15 +90,15 @@ def main():
                 try:
                     wake_engine.stop()
                     
-                    # 1️⃣ --- THE BLUETOOTH HIJACK ---
-                    pause_media()
+                    # 1️⃣ --- THE BLUETOOTH HIJACK (Instant Background Thread) ---
+                    threading.Thread(target=pause_media, daemon=True).start()
                     play_sfx(config["audio"]["sfx_wake"], async_play=True)
 
                     # 2️⃣ --- THE AI TAKEOVER ---
                     start_ai_session(wake_engine, conn_manager, current_noise_floor)
                     
-                    # 3️⃣ --- THE BLUETOOTH RESUME ---
-                    resume_media()
+                    # 3️⃣ --- THE BLUETOOTH RESUME (Instant Background Thread) ---
+                    threading.Thread(target=resume_media, daemon=True).start()
                     
                     # Reset OS back to idle
                     wake_engine.start()
