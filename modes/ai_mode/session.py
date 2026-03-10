@@ -119,8 +119,7 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 speaker_stream = p.open(format=pyaudio.paInt16, 
                                         channels=1, 
                                         rate=22050, 
-                                        output=True,
-                                        output_device_index=device_id)
+                                        output=True)
                 
                 while True:
                     if stop_event.is_set(): break
