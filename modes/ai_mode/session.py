@@ -4,6 +4,8 @@ import pyaudio
 import threading
 import platform
 import sys
+import select
+import audioop  # ⚡ NEW: Built-in audio operations library
 
 # ⚡ THE SMART OS CHECKER
 IS_WINDOWS = platform.system() == "Windows"
@@ -116,8 +118,9 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 t.start()
 
                 device_id = config["audio"].get("output_device_index")
+               # ⚡ FIX 1: Change channels from 1 to 2 to satisfy the Waveshare HAT
                 speaker_stream = p.open(format=pyaudio.paInt16, 
-                                        channels=1, 
+                                        channels=2, 
                                         rate=22050, 
                                         output=True)
                 
@@ -129,7 +132,10 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                         
                         # ⚡ UDP AUDIO CHUNKS (Opcode 2)
                         if opcode == 2: 
-                            speaker_stream.write(data)
+                            # ⚡ FIX 2: Convert Mono to Stereo on the fly
+                            # audioop.tostereo(data, byte_width, left_volume, right_volume)
+                            stereo_data = audioop.tostereo(data, 2, 1, 1)
+                            speaker_stream.write(stereo_data)
                             
                         # ⚡ UDP TEXT COMMANDS (Opcode 1)
                         elif opcode == 1: 
@@ -140,7 +146,7 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                     except Exception as e:
                         print(f"\n❌ [PLAYBACK ERROR] {e}")
                         conn_manager.set_offline(f"Playback Error: {e}") 
-                        break 
+                        break
                 
                 stop_event.set()
                 t.join()
