@@ -18,7 +18,7 @@
         "channels": 1,
         "chunk": 512,
         "silence_limit": 0.3,
-        "safety_margin": 10,
+        "safety_margin": 100,
         "session_timeout": 5.0,
         "min_speech_duration": 0.5
     }
