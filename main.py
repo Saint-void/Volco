@@ -26,6 +26,7 @@ from config.config_manager import config
 from core.audio_io import play_sfx, calibrate_mic
 from core.wake_word import WakeWordEngine
 from core.connection import ConnectionManager
+from core.data_pipe import start_data_pipe
 from core.bluetooth_pairing import enable_bluetooth_pairing 
 
 from modes.ai_mode.session import start_ai_session
@@ -44,7 +45,7 @@ def main():
     
     # ⚡ 2. START BLUETOOTH FIRST!
     enable_bluetooth_pairing()
-
+    start_data_pipe()
     # ⚡ 3. Load the Wake Engine
     wake_engine = WakeWordEngine()
     
