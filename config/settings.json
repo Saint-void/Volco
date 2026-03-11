@@ -9,7 +9,7 @@
     "audio": {
         "output_device_index": 3,
         "sfx_wake": "./assets/sounds/answer.wav",
-        "sfx_sleep": "./assets/sounds/shutdown.wav",
+        "sfx_sleep": "./assets/sounds/shutdown.wav",    
         "sfx_connected": "./assets/sounds/boot.wav",
         "sfx_disconnected": "./assets/sounds/shutdown.wav",
         "sfx_offline": "./assets/sounds/offline_fallback.wav",

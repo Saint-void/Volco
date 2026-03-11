@@ -28,8 +28,16 @@ def _run_rfcomm_server():
                             data = bt_serial.readline()
                             if data:
                                 message = data.decode('utf-8').strip()
-                                if message:
-                                    print(f"📦 [DATA PIPE] PAYLOAD RECEIVED: {message}")
+                                if message.startswith("DB_ID:"):
+                                    # Extract the real ID (e.g., USR_123)
+                                    real_user_id = message.split(":")[1]
+                                    print(f"📦 [DATA PIPE] PAYLOAD RECEIVED: {real_user_id}")
+                                    
+                                    # 💾 Save it directly into Volco's memory drive
+                                    with open("core/current_user.txt", "w") as memory_file:
+                                        memory_file.write(real_user_id)
+                                    
+                                    print(f"✅ [DATA PIPE] Profile Locked In! Volco now belongs to: {real_user_id}")
                                     
                             time.sleep(0.1)
                             

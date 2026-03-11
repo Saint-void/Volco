@@ -4,15 +4,40 @@ import threading
 import queue
 import aiohttp
 import traceback
+import os # ⚡ Needed to check if the memory file exists
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from config.config_manager import config
 from core.audio_io import play_sfx  
 
+def get_current_user_id():
+    """Reads Volco's memory drive to see who currently owns the headset."""
+    memory_path = "core/current_user.txt"
+    if os.path.exists(memory_path):
+        with open(memory_path, "r") as f:
+            user_id = f.read().strip()
+            if user_id:
+                return user_id
+    # Fallback to the default if nobody has ever synced the headset
+    return "OFFLINE_MODE"
+
 class ConnectionManager:
     def __init__(self):
-        self.ws_url = config["server"]["ws_url"]
-        base_url = self.ws_url.split("/volco_ws")[0].replace("ws://", "http://")
-        self.signaling_url = f"{base_url}/volco_webrtc/offer"
+        # 1. Get the raw URL from settings.json
+        raw_ws_url = config["server"]["ws_url"]
+        
+        # 2. Slice off the hardcoded "user_id=sogolo" from the end of the string
+        base_ws = raw_ws_url.split("&user_id=")[0]
+        
+        # 3. Get the REAL User ID from our memory drive
+        self.active_user_id = get_current_user_id()
+        
+        # 4. Construct the true URLs!
+        self.ws_url = f"{base_ws}&user_id={self.active_user_id}"
+        
+        base_http = self.ws_url.split("/volco_ws")[0].replace("ws://", "http://").replace("wss://", "https://")
+        self.signaling_url = f"{base_http}/volco_webrtc/offer"
+        
+        print(f"📡 [NETWORK] Booting with Active Profile ID: {self.active_user_id}")
         
         self.pc = None
         self.channel = None
@@ -29,7 +54,6 @@ class ConnectionManager:
         asyncio.set_event_loop(loop)
         loop.run_forever()
 
-    # ⚡ THE TRACER: Now requires a "reason" so we know exactly who killed it
     def set_offline(self, reason="Unknown Call"):
         if self.is_running:
             print(f"\n⚠️ [NETWORK] Brain connection lost! 🕵️ TRACE: {reason}")
@@ -48,7 +72,6 @@ class ConnectionManager:
             self.webrtc_thread.start()
             time.sleep(0.5) 
         
-        # ⚡ PYLANCE FIX: Prove loop exists before using it
         if self.loop is None:
             return False
 
@@ -56,7 +79,7 @@ class ConnectionManager:
         success = self.connected_event.wait(timeout=20.0)
         
         if success and self.handshake_success:
-            print("✅ Brain Connected (UDP Firehose Active)!")
+            print(f"✅ Brain Connected! Locked to Profile: {self.active_user_id}")
             play_sfx("./assets/sounds/bt_connected.wav", async_play=True)
             self.is_running = True
             return True
@@ -66,14 +89,10 @@ class ConnectionManager:
             return False
 
     async def _async_connect(self):
-        """The actual WebRTC Handshake (SDP Offer -> Answer)."""
         try:
             print("   -> [DEBUG] Creating PeerConnection...")
             self.pc = RTCPeerConnection()
             
-            # ⚡ THE RAW FIREHOSE FIX: ordered=False, maxRetransmits=0
-            # This physically stops WebRTC from acting like TCP. 
-            # If a packet drops, it ignores the error and keeps firing audio anyway!
             self.channel = self.pc.createDataChannel(
                 "volco_audio", 
                 ordered=False, 
@@ -86,31 +105,28 @@ class ConnectionManager:
 
             @self.pc.on("connectionstatechange")
             async def on_connectionstatechange():
-                # ⚡ PYLANCE FIX: Safety check for self.pc
                 if self.pc is None:
                     return
                     
                 if self.pc.connectionState in ["failed", "closed"]:
-                    # TRACE: Did the WebRTC state crash?
                     self.set_offline(f"WebRTC Status changed to: {self.pc.connectionState}")
 
             offer = await self.pc.createOffer()
             await self.pc.setLocalDescription(offer)
 
+            # ⚡ INJECT THE REAL ID INTO THE PAYLOAD
             payload = {
                 "sdp": self.pc.localDescription.sdp, 
                 "type": self.pc.localDescription.type,
-                "user_id": "sogolo"
+                "user_id": self.active_user_id 
             }
             
-            # ⚡ PYLANCE FIX: Use the strict aiohttp timeout object
             async with aiohttp.ClientSession() as session:
                 timeout = aiohttp.ClientTimeout(total=20.0)
                 async with session.post(self.signaling_url, json=payload, timeout=timeout) as resp:
                     if resp.status != 200:
                         raise Exception(f"Bad Gateway or Server Error: {resp.status}")
                     
-                    # ⚡ REPAIRED BLOCK: This was missing in your paste!
                     answer_data = await resp.json()
 
             answer = RTCSessionDescription(sdp=answer_data["sdp"], type=answer_data["type"])
@@ -129,6 +145,7 @@ class ConnectionManager:
             print(f"⚠️ WebRTC Connection Error: {e}")
             self.connected_event.set()
 
+    # (The rest of your ConnectionManager code remains exactly the same below here...)
     def is_connected(self):
         return self.is_running and self.channel and self.channel.readyState == "open"
 
@@ -139,10 +156,7 @@ class ConnectionManager:
 
     def send_data(self, data):
         if not self.is_connected(): return False
-        
-        # ⚡ PYLANCE FIX: Prove loop exists before sending
         if self.loop is None: return False
-        
         asyncio.run_coroutine_threadsafe(self._async_send(data), self.loop)
         return True
 
@@ -151,31 +165,21 @@ class ConnectionManager:
             try:
                 self.channel.send(data)
             except Exception as e:
-                # ⚡ TRACE: Did the UDP send command crash?
                 self.set_offline(f"UDP Channel Send Error: {e}")
 
     def recv_data(self):
-        """Pure, infinite loop. No timers. No dropping connections."""
         while self.is_running:
             try:
-                # We use a tiny 0.1s check just so it doesn't hard-lock the CPU, 
-                # but we removed ALL the connection dropping logic!
                 data = self.receive_queue.get(timeout=0.1)
-                
                 if isinstance(data, bytes): 
                     return (2, data)
                 else: 
                     return (1, data)
-                    
             except queue.Empty:
-                # The queue is empty? Who cares. Keep waiting forever.
                 continue 
-                
-        # It will only reach here if the network physically dies.
         raise Exception("Connection closed")
 
     def close(self):
-        # ⚡ TRACE: Did another script explicitly tell us to hang up?
         self.set_offline("conn_manager.close() was explicitly called by another script!")
         if self.pc and self.loop and self.loop.is_running():
             asyncio.run_coroutine_threadsafe(self.pc.close(), self.loop)
