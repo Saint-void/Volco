@@ -92,14 +92,14 @@ def main():
                     print("🔌 Connection lost. Attempting reconnect...")
                     if not conn_manager.connect():
                         print("❌ Failed to reconnect.")
-                        play_sfx(config["audio"]["sfx_offline"], async_play=True)
+                        play_sfx(config["audio"]["sfx_offline"])
                         wake_engine.start() # Turn the mic back on so they can try again
                         continue
                 
                 try:
                     # 1️⃣ --- THE BLUETOOTH HIJACK (Instant Background Thread) ---
                     threading.Thread(target=pause_media, daemon=True).start()
-                    play_sfx(config["audio"]["sfx_wake"], async_play=True)
+                    play_sfx(config["audio"]["sfx_wake"])
 
                     # 2️⃣ --- THE AI TAKEOVER ---
                     start_ai_session(wake_engine, conn_manager, current_noise_floor)
@@ -120,7 +120,7 @@ def main():
 
     except KeyboardInterrupt:
         print("\n👋 Shutting down Volco OS...")
-        play_sfx("./assets/sounds/shutdown.wav", async_play=False)
+        play_sfx("./assets/sounds/shutdown.wav")
     finally:
         conn_manager.close()
         wake_engine.cleanup()
