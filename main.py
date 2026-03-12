@@ -2,15 +2,23 @@ import time
 import platform
 import sys
 import threading
+
+# ⚡ 1. ONLY IMPORT THE AUDIO ENGINE FIRST
+from core.audio_io import play_sfx 
+
+# ⚡ 2. PLAY THE BOOT SOUND INSTANTLY!
+print("\n--- VOLCO OS INITIALIZING ---")
+play_sfx("./assets/sounds/boot.wav", async_play=True)
+
+# ⚡ 3. NOW LOAD THE HEAVY AI LIBRARIES IN THE BACKGROUND
 from config.config_manager import config
-from core.audio_io import play_sfx, calibrate_mic
+from core.audio_io import calibrate_mic
 from core.wake_word import WakeWordEngine
 from core.connection import ConnectionManager
 from core.data_pipe import start_data_pipe
 from core.bluetooth_pairing import enable_bluetooth_pairing 
 from modes.ai_mode.session import start_ai_session
 from modes.bt_mode.media_control import pause_media, resume_media
-
 # ==========================================
 # 🔘 HARDWARE BUTTON (GPIO)
 # ==========================================
@@ -55,20 +63,14 @@ def check_for_button():
 # 🚀 THE DISPATCHER (MAIN OS)
 # =============================
 def main():
-    print("\n--- VOLCO OS INITIALIZATION ---")
+    # We removed the boot sound from here because it already played!
     
-    # ⚡ 1. The Boot Sound
-    play_sfx("./assets/sounds/boot.wav")
-    time.sleep(1.5)
-    
-    # ⚡ 2. Initialize the Connection Manager FIRST
+    # ⚡ 1. Initialize the Connection Manager FIRST
     conn_manager = ConnectionManager()
     
-    # ⚡ 3. START BLUETOOTH & Pass the manager to the pipe!
+    # ⚡ 2. START BLUETOOTH & Pass the manager to the pipe!
     enable_bluetooth_pairing()
-    play_sfx("./assets/sounds/bt_pairing.wav")
-    time.sleep(1.2)
-    start_data_pipe(conn_manager) # 👈 Now the pipe can wake the AI up!
+    start_data_pipe(conn_manager)
 
     # ⚡ 4. Load the Wake Engine
     wake_engine = WakeWordEngine()
