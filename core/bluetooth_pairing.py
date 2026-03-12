@@ -9,7 +9,16 @@ def _bluetooth_background_manager():
 
     # 1. Turn on the antenna
     subprocess.run(["bluetoothctl", "power", "on"], stdout=subprocess.DEVNULL)
-    time.sleep(1) # Give the Linux Kernel a second to auto-connect known devices
+    
+    # ⚡ THE FIX: Tell Linux to STOP asking for PINs permanently
+    # This sets the "NoInputNoOutput" mode so it "Just Works"
+    subprocess.run(["bluetoothctl", "agent", "NoInputNoOutput"], stdout=subprocess.DEVNULL)
+    subprocess.run(["bluetoothctl", "default-agent"], stdout=subprocess.DEVNULL)
+    
+    # Optional: Set the broadcast name so your phone sees "Volco Headset"
+    subprocess.run(["bluetoothctl", "system-alias", "Volco"], stdout=subprocess.DEVNULL)
+
+    time.sleep(1) 
 
     # 2. Initial Boot Check
     connected_out = subprocess.run(["bluetoothctl", "devices", "Connected"], capture_output=True, text=True).stdout
