@@ -78,7 +78,7 @@ if not IS_WINDOWS:
                 print("\n☀️ [POWER] Waking up Volco!")
                 volco_sleeping = False
                 threading.Thread(target=play_sfx, args=("./assets/sounds/boot.wav",)).start()
-                time.sleep(1.3) # Let the sound play before re-enabling Bluetooth
+                time.sleep(2) # Let the sound play before re-enabling Bluetooth
                 
                 # ⚡ HARDWARE BOOT: Turn the radio back on
                 subprocess.run(["bluetoothctl", "power", "on"], stdout=subprocess.DEVNULL)
