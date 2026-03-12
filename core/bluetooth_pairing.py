@@ -18,17 +18,19 @@ def _bluetooth_background_manager():
     if len(connected_macs) > 0:
         locked_device = connected_macs[0]
         print(f"\n🔒 [BT MODE] Auto-locked to existing device on boot: {locked_device}")
-        
-        # ⚡ PLAY THE CONNECTED CHIME!
         play_sfx("./assets/sounds/bt_connected.wav")
-        
-        # Make sure discoverable is off so it doesn't trigger Linux pairing sounds
         subprocess.run(["bluetoothctl", "discoverable", "off"], stdout=subprocess.DEVNULL)
         subprocess.run(["bluetoothctl", "pairable", "off"], stdout=subprocess.DEVNULL)
     else:
         # If nobody is connected, open the vault doors for pairing
+        print("\n🔓 [BT MODE] No known devices found. Entering Pairing Mode...")
+        
+        # ⚡ ADD THIS LINE RIGHT HERE!
+        play_sfx("./assets/sounds/bt_pairing.wav") 
+        
         subprocess.run(["bluetoothctl", "discoverable", "on"], stdout=subprocess.DEVNULL)
         subprocess.run(["bluetoothctl", "pairable", "on"], stdout=subprocess.DEVNULL)
+
 
     # 3. Start the normal monitoring loop
     while True:
