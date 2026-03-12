@@ -29,18 +29,17 @@ if not IS_WINDOWS:
     try:
         from gpiozero import Button
         
-        BUTTON_PIN = 17 
-        
-        # gpiozero automatically sets up the pull-up resistor and bounce time!
-        volco_button = Button(BUTTON_PIN, bounce_time=0.3)
+        # We matched the 0.1s bounce_time from your successful test script
+        volco_button = Button(17, bounce_time=0.1)
         
         def button_callback():
             global _button_pressed_event
+            print("\n🚨 [HARDWARE INTERRUPT] Button was physically pressed!")
             _button_pressed_event = True
             
-        # Tell the button to trigger our callback when pressed
+        # Bind the hardware interrupt to our function
         volco_button.when_pressed = button_callback
-        print(f"🔘 [HARDWARE] Physical HAT button initialized on GPIO {BUTTON_PIN}!")
+        print("🔘 [HARDWARE] Physical HAT button initialized on GPIO 17!")
         
     except ImportError:
         print("⚠️ [HARDWARE] gpiozero not found! Button disabled.")
@@ -51,9 +50,18 @@ def check_for_button():
         return False 
         
     global _button_pressed_event
-    if _button_pressed_event:
+    
+    # Failsafe: Also check if it's actively being held down, just in case!
+    is_held_down = False
+    try:
+        is_held_down = volco_button.is_pressed
+    except:
+        pass
+        
+    if _button_pressed_event or is_held_down:
         _button_pressed_event = False # Reset the trigger!
         return True
+        
     return False
 
 # =============================
