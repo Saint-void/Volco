@@ -40,23 +40,26 @@ def main():
     print("\n--- VOLCO OS INITIALIZATION ---")
     
     # ⚡ 1. The Boot Sound
-    play_sfx("./assets/sounds/boot.wav", async_play=True)
-    time.sleep(1.2) # Give the voice a second to finish speaking
+    play_sfx("./assets/sounds/boot.wav")
+    time.sleep(1.5)
     
-    # ⚡ 2. START BLUETOOTH FIRST!
+    # ⚡ 2. Initialize the Connection Manager FIRST
+    conn_manager = ConnectionManager()
+    
+    # ⚡ 3. START BLUETOOTH & Pass the manager to the pipe!
     enable_bluetooth_pairing()
-    start_data_pipe()
-    # ⚡ 3. Load the Wake Engine
+    play_sfx("./assets/sounds/bt_pairing.wav", async_play=True)
+    time.sleep(1.2)
+    start_data_pipe(conn_manager) # 👈 Now the pipe can wake the AI up!
+
+    # ⚡ 4. Load the Wake Engine
     wake_engine = WakeWordEngine()
     
-    # ⚡ 4. Connect to Vella Server
-    conn_manager = ConnectionManager()
+    # ⚡ 5. Attempt Connection (Will gracefully abort if no ID exists yet)
     conn_manager.connect()
 
-    # ⚡ 5. Calibrate the microphone
-    current_noise_floor = calibrate_mic(duration=1.0)
-
-    print(f"\n✅ VOLCO OS READY | Waiting for wake word or button press...") 
+    # ⚡ 6. Calibrate the microphone
+    current_noise_floor = calibrate_mic(duration=1.0)    
     
     try:
         wake_engine.start()

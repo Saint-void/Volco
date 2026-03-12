@@ -62,6 +62,23 @@ class ConnectionManager:
             self.connected_event.clear()
 
     def connect(self):
+        # ⚡ 1. Read the memory drive EVERY time we try to connect
+        self.active_user_id = get_current_user_id()
+        
+        # ⚡ 2. If it's a blank headset, ABORT the connection and wait!
+        if self.active_user_id in ["OFFLINE_MODE", ""]:
+            print("🛑 [NETWORK] Setup Mode: No User Profile found. Waiting for Volco App sync...")
+            self.is_running = False
+            return False
+            
+        # ⚡ 3. Re-build the URL with the fresh ID
+        raw_ws_url = config["server"]["ws_url"]
+        base_ws = raw_ws_url.split("&user_id=")[0]
+        self.ws_url = f"{base_ws}&user_id={self.active_user_id}"
+        
+        base_http = self.ws_url.split("/volco_ws")[0].replace("ws://", "http://").replace("wss://", "https://")
+        self.signaling_url = f"{base_http}/volco_webrtc/offer"
+
         print(f"🔌 Signaling Brain at {self.signaling_url}...")
         self.connected_event.clear()
         self.handshake_success = False
