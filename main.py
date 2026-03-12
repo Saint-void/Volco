@@ -1,37 +1,55 @@
 import time
 import platform
 import sys
-import select
-import threading # ⚡ Added for instant background tasks
-
-# ⚡ THE SMART OS CHECKER (Replaces 'import keyboard')
-IS_WINDOWS = platform.system() == "Windows"
-keyboard = None
-if IS_WINDOWS:
-    import keyboard
-
-def check_for_button():
-    """Checks for Space/Shift on Windows, or the 'Enter' key on Linux."""
-    if IS_WINDOWS and keyboard is not None:
-        return keyboard.is_pressed("space") or keyboard.is_pressed("right shift")
-    else:
-        # Non-blocking check for the Enter key on Linux
-        i, _, _ = select.select([sys.stdin], [], [], 0.0)
-        if i:
-            sys.stdin.readline() 
-            return True
-        return False
-
+import threading
 from config.config_manager import config
 from core.audio_io import play_sfx, calibrate_mic
 from core.wake_word import WakeWordEngine
 from core.connection import ConnectionManager
 from core.data_pipe import start_data_pipe
 from core.bluetooth_pairing import enable_bluetooth_pairing 
-
 from modes.ai_mode.session import start_ai_session
 from modes.bt_mode.media_control import pause_media, resume_media
- 
+
+# ==========================================
+# 🔘 HARDWARE BUTTON (GPIO)
+# ==========================================
+IS_WINDOWS = platform.system() == "Windows"
+_button_pressed_event = False
+
+if not IS_WINDOWS:
+    try:
+        import RPi.GPIO as GPIO
+        
+        BUTTON_PIN = 17 # ⚠️ Most Audio HAT buttons are on Pin 17. Change if needed!
+        
+        # Setup the GPIO board
+        GPIO.setmode(GPIO.BCM)
+        # We use an internal pull-up resistor. The button will pull it DOWN when pressed.
+        GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        
+        def button_callback(channel):
+            global _button_pressed_event
+            _button_pressed_event = True
+            
+        # Tell Linux to interrupt us ONLY when the button is physically pushed down (FALLING)
+        # We add a 300ms "bouncetime" so a slightly jiggly button press doesn't trigger it 5 times.
+        GPIO.add_event_detect(BUTTON_PIN, GPIO.FALLING, callback=button_callback, bouncetime=300)
+        print("🔘 [HARDWARE] Physical HAT button initialized on GPIO 17!")
+        
+    except ImportError:
+        print("⚠️ [HARDWARE] RPi.GPIO not found! Button disabled.")
+        
+def check_for_button():
+    """Checks the physical hardware state."""
+    if IS_WINDOWS:
+        return False # Ignore buttons if we are testing on a Windows PC
+        
+    global _button_pressed_event
+    if _button_pressed_event:
+        _button_pressed_event = False # Reset the trigger!
+        return True
+    return False
 
 # =============================
 # 🚀 THE DISPATCHER (MAIN OS)
