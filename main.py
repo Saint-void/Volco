@@ -48,7 +48,7 @@ def main():
     
     # ⚡ 3. START BLUETOOTH & Pass the manager to the pipe!
     enable_bluetooth_pairing()
-    play_sfx("./assets/sounds/bt_pairing.wav", async_play=True)
+    play_sfx("./assets/sounds/bt_pairing.wav")
     time.sleep(1.2)
     start_data_pipe(conn_manager) # 👈 Now the pipe can wake the AI up!
 
