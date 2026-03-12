@@ -54,34 +54,37 @@ if not IS_WINDOWS:
         def button_held():
             """Fires exactly when the button has been held for 3 seconds."""
             global _was_held_flag, volco_sleeping
-            _was_held_flag = True # Mark that this was a long press
+            _was_held_flag = True 
             
             if not volco_sleeping:
                 print("\n🌙 [POWER] 3-Second Hold Detected! Entering Deep Sleep...")
                 volco_sleeping = True
-                # Play a sleep chime in the background
                 threading.Thread(target=play_sfx, args=("./assets/sounds/shutdown.wav",)).start()
-                manage_audio_bridge("stop") # Kill the Bluetooth hardware drain
+                
+                manage_audio_bridge("stop")
+                # ⚡ PHYSICAL HARDWARE SHUTDOWN: Turn off the Bluetooth radio completely
+                subprocess.run(["bluetoothctl", "power", "off"], stdout=subprocess.DEVNULL)
 
         def button_released():
             """Fires when you let go of the button."""
             global _was_held_flag, volco_sleeping, _button_pressed_event
             
-            # If you just finished holding it for 3 seconds, do nothing else.
             if _was_held_flag:
                 _was_held_flag = False
                 return
                 
-            # If we get here, it was a quick single click!
             if volco_sleeping:
                 print("\n☀️ [POWER] Waking up Volco!")
                 volco_sleeping = False
                 threading.Thread(target=play_sfx, args=("./assets/sounds/boot.wav",)).start()
-                manage_audio_bridge("start") # Turn Bluetooth back on
+                
+                # ⚡ HARDWARE BOOT: Turn the radio back on
+                subprocess.run(["bluetoothctl", "power", "on"], stdout=subprocess.DEVNULL)
+                time.sleep(1) # Give the Linux kernel a second to boot the antenna
+                manage_audio_bridge("start")
             else:
                 print("\n🚨 [HARDWARE INTERRUPT] Single click! Triggering AI...")
                 _button_pressed_event = True
-                # Instantly lock down the hardware for Vella
                 threading.Thread(target=pause_media, daemon=True).start()
                 manage_audio_bridge("stop")
 
@@ -131,21 +134,22 @@ def main():
         was_sleeping_loop_state = False 
             
         while True:
-            # 🛌 1. THE DEEP SLEEP CHECK
+           # 🛌 1. THE DEEP SLEEP CHECK
             if volco_sleeping:
                 if not was_sleeping_loop_state:
                     print("💤 OS suspending background tasks to save power...")
-                    wake_engine.stop() # Physically turn off the microphone
+                    wake_engine.stop() 
+                    conn_manager.close() # ⚡ Drop the backend Vella connection!
                     was_sleeping_loop_state = True
                 
-                # Freeze the loop here for half a second to drop CPU to near 0%
                 time.sleep(0.5) 
-                continue # Skip the rest of the loop until awakened
+                continue 
                 
             # ☀️ 2. THE WAKE UP RECOVERY
             if was_sleeping_loop_state:
                 print("⚡ OS resuming background tasks...")
-                wake_engine.start() # Turn the microphone back on
+                wake_engine.start() 
+                conn_manager.connect() # ⚡ Reconnect to the Vella server!
                 was_sleeping_loop_state = False
 
             # --- YOUR NORMAL LOOP STARTS HERE ---
