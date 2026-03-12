@@ -12,6 +12,7 @@
         "sfx_sleep": "./assets/sounds/shutdown.wav",    
         "sfx_connected": "./assets/sounds/boot.wav",
         "sfx_disconnected": "./assets/sounds/shutdown.wav",
+        "sfx_online": "./assets/sounds/vella_online.wav",
         "sfx_offline": "./assets/sounds/offline_fallback.wav",
         "session_end" : "./assets/sounds/session_end.wav",
         "rate": 16000,

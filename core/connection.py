@@ -97,7 +97,7 @@ class ConnectionManager:
         
         if success and self.handshake_success:
             print(f"✅ Brain Connected! Locked to Profile: {self.active_user_id}")
-            play_sfx("./assets/sounds/bt_connected.wav")
+            play_sfx("./assets/sounds/vella_online.wav")
             self.is_running = True
             return True
         else:
