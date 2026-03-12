@@ -4,7 +4,9 @@ import threading
 import subprocess
 import serial
 
-# Pass conn_manager into the background thread
+# ⚡ THE LOCK: Prevents multiple threads from fighting over the antenna
+_pipe_running = False 
+
 def _run_rfcomm_server(conn_manager):
     try:
         subprocess.run(["sudo", "killall", "rfcomm"], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
@@ -18,29 +20,37 @@ def _run_rfcomm_server(conn_manager):
                     subprocess.run(["sudo", "chmod", "666", "/dev/rfcomm0"]) 
 
                     with serial.Serial("/dev/rfcomm0", 9600, timeout=1) as bt_serial:
-                        print("\n✅ [DATA PIPE] Phone connected to Kernel Pipe!")
+                        print("\n✅ [DATA PIPE] Phone connected! Waiting for payload...")
 
                         while os.path.exists("/dev/rfcomm0"):
                             data = bt_serial.readline()
                             if data:
-                                message = data.decode('utf-8').strip()
+                                # Decode and ignore any weird Bluetooth background noise bytes
+                                message = data.decode('utf-8', errors='ignore').strip()
+                                
+                                # Print everything so we know the phone is talking!
+                                if message:
+                                    print(f"🔍 [DEBUG DATA]: {message}") 
+                                
                                 if message.startswith("DB_ID:"):
                                     real_user_id = message.split(":")[1]
                                     
-                                    # 💾 Save to memory
-                                    with open("core/current_user.txt", "w") as memory_file:
+                                    # 💾 Use an absolute path so it forces the file to save in /core/
+                                    memory_path = os.path.join(os.path.dirname(__file__), "current_user.txt")
+                                    with open(memory_path, "w") as memory_file:
                                         memory_file.write(real_user_id)
                                     
-                                    print(f"✅ [DATA PIPE] Profile Locked In! Volco now belongs to: {real_user_id}")
+                                    print(f"✅ [DATA PIPE] Profile Locked In! Saved to: {memory_path}")
                                     
                                     # ⚡ INSTANTLY WAKE UP THE AI CONNECTION!
                                     if conn_manager and not conn_manager.is_connected():
-                                        print("🚀 [DATA PIPE] Triggering Vella Server connection...")
+                                        print("🚀 [DATA PIPE] Waking up AI and connecting to Vella...")
                                         conn_manager.connect()
                                         
                             time.sleep(0.1)
                             
-                except serial.SerialException:
+                except serial.SerialException as e:
+                    # Linux naturally throws a SerialException when the phone disconnects
                     pass 
                 except Exception as e:
                     print(f"⚠️ [DATA PIPE] Stream Error: {e}")
@@ -53,7 +63,11 @@ def _run_rfcomm_server(conn_manager):
     except Exception as e:
         print(f"❌ [DATA PIPE] Server crashed: {e}")
 
-# Accept the conn_manager as an argument
 def start_data_pipe(conn_manager=None):
+    global _pipe_running
+    if _pipe_running:
+        return # Block duplicate threads from crashing the port!
+        
+    _pipe_running = True
     print("📡 [DATA PIPE] Outsourcing Bluetooth Serial to Linux Kernel...")
     threading.Thread(target=_run_rfcomm_server, args=(conn_manager,), daemon=True).start()

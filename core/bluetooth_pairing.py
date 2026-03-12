@@ -2,6 +2,8 @@ import subprocess
 import time
 import threading
 
+from core.audio_io import play_sfx
+
 def _bluetooth_background_manager():
     """Smart Vault: Only handles visibility and intruder kicking. NO AGENTS."""
     locked_device = None
@@ -27,6 +29,7 @@ def _bluetooth_background_manager():
                 if locked_device is None:
                     locked_device = connected_macs[0]
                     print(f"\n🔒 [BT MODE] Locked to device: {locked_device}")
+                    play_sfx("./assets/sounds/bt_connected.wav")
                     subprocess.run(["bluetoothctl", "trust", locked_device], stdout=subprocess.DEVNULL)
                     subprocess.run(["bluetoothctl", "discoverable", "off"], stdout=subprocess.DEVNULL)
 
