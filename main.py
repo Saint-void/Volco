@@ -75,9 +75,13 @@ def main():
             button_triggered = check_for_button()
             
             # ⚡ TRIGGER IF EITHER ONE HAPPENS
+            # ⚡ TRIGGER IF EITHER ONE HAPPENS
             if is_wake_word or button_triggered:
                 trigger_type = "BUTTON" if button_triggered else "VOICE"
                 print(f"\n⚡ WAKE TRIGGERED ({trigger_type})!")
+                
+                # ⚡ THE AUDIO FIX: Stop the microphone immediately to prevent ALSA crashes!
+                wake_engine.stop() 
                 
                 # Network Check
                 if conn_manager.is_connected():
@@ -89,11 +93,10 @@ def main():
                     if not conn_manager.connect():
                         print("❌ Failed to reconnect.")
                         play_sfx(config["audio"]["sfx_offline"], async_play=True)
+                        wake_engine.start() # Turn the mic back on so they can try again
                         continue
                 
                 try:
-                    wake_engine.stop()
-                    
                     # 1️⃣ --- THE BLUETOOTH HIJACK (Instant Background Thread) ---
                     threading.Thread(target=pause_media, daemon=True).start()
                     play_sfx(config["audio"]["sfx_wake"], async_play=True)

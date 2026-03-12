@@ -40,13 +40,7 @@ def _run_rfcomm_server(conn_manager):
                                     with open(memory_path, "w") as memory_file:
                                         memory_file.write(real_user_id)
                                     
-                                    print(f"✅ [DATA PIPE] Profile Locked In! Saved to: {memory_path}")
-                                    
-                                    # ⚡ INSTANTLY WAKE UP THE AI CONNECTION!
-                                    if conn_manager and not conn_manager.is_connected():
-                                        print("🚀 [DATA PIPE] Waking up AI and connecting to Vella...")
-                                        conn_manager.connect()
-                                        
+                                    print(f"✅ [DATA PIPE] Profile Locked In! Saved to: {memory_path}")                                        
                             time.sleep(0.1)
                             
                 except serial.SerialException as e:
