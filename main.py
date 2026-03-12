@@ -40,9 +40,10 @@ def manage_audio_bridge(action="stop"):
 IS_WINDOWS = platform.system() == "Windows"
 _button_pressed_event = False
 
-# ⚡ NEW: Power State Trackers
+# Power State Trackers
 volco_sleeping = False  
 _was_held_flag = False  
+conn_manager = None   # ⚡ ADD THIS LINE HERE 
 
 if not IS_WINDOWS:
     try:
@@ -85,23 +86,33 @@ if not IS_WINDOWS:
                 time.sleep(1.2) # Let the Bluetooth hardware initialize before trying to connect
                 
                 # ⚡ NEW: The Aggressive Reconnect Hunter
+                # ⚡ NEW: The Aggressive Reconnect Hunter
                 def aggressive_reconnect():
-                    time.sleep(1.5) # Give the physical antenna exactly 1.5s to boot
+                    global conn_manager  # ⚡ ADD THIS LINE
+                    time.sleep(1.5) # 1. Let the physical antenna boot
                     
-                    # Look up all devices Volco has ever paired with
                     paired_out = subprocess.run(["bluetoothctl", "devices"], capture_output=True, text=True).stdout
                     
                     for line in paired_out.strip().split('\n'):
                         if line.startswith("Device"):
                             mac = line.split()[1]
                             print(f"🔄 [BT] Aggressively pulling connection from MAC: {mac}")
-                            # Force the connection from the Pi's side!
                             subprocess.run(["bluetoothctl", "connect", mac], stdout=subprocess.DEVNULL)
                             
-                    # Start the music bridge now that the connection is forced
+                    # 2. Start the music bridge
                     manage_audio_bridge("start")
+                    
+                    print("🔌 Re-establishing Vella Server & App Data Pipe...")
+                    if conn_manager is not None:  # ⚡ Safety check
+                        try:
+                            start_data_pipe(conn_manager) 
+                        except Exception:
+                            pass 
+                            
+                        conn_manager.connect() 
+                        print("✅ Volco fully restored and online.")
 
-                # Fire the hunter in the background so it doesn't freeze the button
+                # Fire the hunter in the background
                 threading.Thread(target=aggressive_reconnect, daemon=True).start()
                 
             else:
@@ -130,7 +141,9 @@ def check_for_button():
 # 🚀 THE DISPATCHER (MAIN OS)
 # =============================
 def main():
-    # ⚡ 1. Initialize the Connection Manager FIRST
+    global conn_manager  # ⚡ ADD THIS LINE
+
+    # 1. Initialize the Connection Manager FIRST
     conn_manager = ConnectionManager()
     
     # ⚡ 2. START BLUETOOTH & Pass the manager to the pipe!
@@ -171,7 +184,7 @@ def main():
             if was_sleeping_loop_state:
                 print("⚡ OS resuming background tasks...")
                 wake_engine.start() 
-                conn_manager.connect() # ⚡ Reconnect to the Vella server!
+                # ❌ We removed conn_manager.connect() from here!
                 was_sleeping_loop_state = False
 
             # --- YOUR NORMAL LOOP STARTS HERE ---
