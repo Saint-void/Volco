@@ -35,52 +35,70 @@ def manage_audio_bridge(action="stop"):
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 # ==========================================
-# 🔘 HARDWARE BUTTON (MODERN GPIOZERO)
+# 🔘 HARDWARE BUTTON & POWER MANAGEMENT
 # ==========================================
 IS_WINDOWS = platform.system() == "Windows"
 _button_pressed_event = False
+
+# ⚡ NEW: Power State Trackers
+volco_sleeping = False  
+_was_held_flag = False  
 
 if not IS_WINDOWS:
     try:
         from gpiozero import Button
         
-        # We matched the 0.1s bounce_time from your successful test script
-        volco_button = Button(17, bounce_time=0.1)
+        # We added hold_time=3.0 to track the 3-second sleep command
+        volco_button = Button(17, bounce_time=0.1, hold_time=3.0)
         
-        def button_callback():
-            global _button_pressed_event
-            print("\n🚨 [HARDWARE INTERRUPT] Button was physically pressed!")
-            _button_pressed_event = True
+        def button_held():
+            """Fires exactly when the button has been held for 3 seconds."""
+            global _was_held_flag, volco_sleeping
+            _was_held_flag = True # Mark that this was a long press
             
-            # ⚡ INSTANT UNLOCK: Pause phone and kill bridge so the main loop unfreezes!
-            threading.Thread(target=pause_media, daemon=True).start()
-            manage_audio_bridge("stop")
+            if not volco_sleeping:
+                print("\n🌙 [POWER] 3-Second Hold Detected! Entering Deep Sleep...")
+                volco_sleeping = True
+                # Play a sleep chime in the background
+                threading.Thread(target=play_sfx, args=("./assets/sounds/shutdown.wav",)).start()
+                manage_audio_bridge("stop") # Kill the Bluetooth hardware drain
+
+        def button_released():
+            """Fires when you let go of the button."""
+            global _was_held_flag, volco_sleeping, _button_pressed_event
             
-        # Bind the hardware interrupt to our function
-        volco_button.when_pressed = button_callback
-        print("🔘 [HARDWARE] Physical HAT button initialized on GPIO 17!")
+            # If you just finished holding it for 3 seconds, do nothing else.
+            if _was_held_flag:
+                _was_held_flag = False
+                return
+                
+            # If we get here, it was a quick single click!
+            if volco_sleeping:
+                print("\n☀️ [POWER] Waking up Volco!")
+                volco_sleeping = False
+                threading.Thread(target=play_sfx, args=("./assets/sounds/boot.wav",)).start()
+                manage_audio_bridge("start") # Turn Bluetooth back on
+            else:
+                print("\n🚨 [HARDWARE INTERRUPT] Single click! Triggering AI...")
+                _button_pressed_event = True
+                # Instantly lock down the hardware for Vella
+                threading.Thread(target=pause_media, daemon=True).start()
+                manage_audio_bridge("stop")
+
+        # Bind the hardware interrupts
+        volco_button.when_held = button_held
+        volco_button.when_released = button_released
+        print("🔘 [HARDWARE] Smart Button (Click/Hold) initialized on GPIO 17!")
         
     except ImportError:
         print("⚠️ [HARDWARE] gpiozero not found! Button disabled.")
         
 def check_for_button():
-    """Checks the physical hardware state."""
-    if IS_WINDOWS:
-        return False 
-        
+    """Checks if a single click happened while awake."""
     global _button_pressed_event
-    
-    # Failsafe: Also check if it's actively being held down, just in case!
-    is_held_down = False
-    try:
-        is_held_down = volco_button.is_pressed
-    except:
-        pass
-        
-    if _button_pressed_event or is_held_down:
-        _button_pressed_event = False # Reset the trigger!
+    if _button_pressed_event:
+        _button_pressed_event = False 
         return True
-        
     return False
 
 # =============================
@@ -108,12 +126,33 @@ def main():
     
     try:
         wake_engine.start()
+        
+        # Track what the loop was doing so we know when to turn the mic back on
+        was_sleeping_loop_state = False 
             
         while True:
+            # 🛌 1. THE DEEP SLEEP CHECK
+            if volco_sleeping:
+                if not was_sleeping_loop_state:
+                    print("💤 OS suspending background tasks to save power...")
+                    wake_engine.stop() # Physically turn off the microphone
+                    was_sleeping_loop_state = True
+                
+                # Freeze the loop here for half a second to drop CPU to near 0%
+                time.sleep(0.5) 
+                continue # Skip the rest of the loop until awakened
+                
+            # ☀️ 2. THE WAKE UP RECOVERY
+            if was_sleeping_loop_state:
+                print("⚡ OS resuming background tasks...")
+                wake_engine.start() # Turn the microphone back on
+                was_sleeping_loop_state = False
+
+            # --- YOUR NORMAL LOOP STARTS HERE ---
             # Heartbeat
             conn_manager.send_ping()
             
-            # 🎧 Listen for Wake Word (Will pause here if music is playing)
+            # 🎧 Listen for Wake Word
             is_wake_word, pcm = wake_engine.read_and_process()
             
             # 🔘 Listen for Physical Button Press
