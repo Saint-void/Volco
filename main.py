@@ -20,38 +20,35 @@ from core.bluetooth_pairing import enable_bluetooth_pairing
 from modes.ai_mode.session import start_ai_session
 from modes.bt_mode.media_control import pause_media, resume_media
 # ==========================================
-# 🔘 HARDWARE BUTTON (GPIO)
+# 🔘 HARDWARE BUTTON (MODERN GPIOZERO)
 # ==========================================
 IS_WINDOWS = platform.system() == "Windows"
 _button_pressed_event = False
 
 if not IS_WINDOWS:
     try:
-        import RPi.GPIO as GPIO
+        from gpiozero import Button
         
-        BUTTON_PIN = 17 # ⚠️ Most Audio HAT buttons are on Pin 17. Change if needed!
+        BUTTON_PIN = 17 
         
-        # Setup the GPIO board
-        GPIO.setmode(GPIO.BCM)
-        # We use an internal pull-up resistor. The button will pull it DOWN when pressed.
-        GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        # gpiozero automatically sets up the pull-up resistor and bounce time!
+        volco_button = Button(BUTTON_PIN, bounce_time=0.3)
         
-        def button_callback(channel):
+        def button_callback():
             global _button_pressed_event
             _button_pressed_event = True
             
-        # Tell Linux to interrupt us ONLY when the button is physically pushed down (FALLING)
-        # We add a 300ms "bouncetime" so a slightly jiggly button press doesn't trigger it 5 times.
-        GPIO.add_event_detect(BUTTON_PIN, GPIO.FALLING, callback=button_callback, bouncetime=300)
-        print("🔘 [HARDWARE] Physical HAT button initialized on GPIO 17!")
+        # Tell the button to trigger our callback when pressed
+        volco_button.when_pressed = button_callback
+        print(f"🔘 [HARDWARE] Physical HAT button initialized on GPIO {BUTTON_PIN}!")
         
     except ImportError:
-        print("⚠️ [HARDWARE] RPi.GPIO not found! Button disabled.")
+        print("⚠️ [HARDWARE] gpiozero not found! Button disabled.")
         
 def check_for_button():
     """Checks the physical hardware state."""
     if IS_WINDOWS:
-        return False # Ignore buttons if we are testing on a Windows PC
+        return False 
         
     global _button_pressed_event
     if _button_pressed_event:
@@ -63,6 +60,7 @@ def check_for_button():
 # 🚀 THE DISPATCHER (MAIN OS)
 # =============================
 def main():
+# ... (the rest remains exactly the same)
     # We removed the boot sound from here because it already played!
     
     # ⚡ 1. Initialize the Connection Manager FIRST
