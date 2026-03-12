@@ -46,7 +46,7 @@ _was_held_flag = False
 
 if not IS_WINDOWS:
     try:
-        from gpiozero import Button
+        from gpiozero import Button #type: ignore
         
         # We added hold_time=3.0 to track the 3-second sleep command
         volco_button = Button(17, bounce_time=0.1, hold_time=3.0)
@@ -80,8 +80,28 @@ if not IS_WINDOWS:
                 
                 # ⚡ HARDWARE BOOT: Turn the radio back on
                 subprocess.run(["bluetoothctl", "power", "on"], stdout=subprocess.DEVNULL)
-                time.sleep(1) # Give the Linux kernel a second to boot the antenna
-                manage_audio_bridge("start")
+                threading.Thread(target=play_sfx, args=("./assets/sounds/bt_pairing.wav",)).start()
+                
+                # ⚡ NEW: The Aggressive Reconnect Hunter
+                def aggressive_reconnect():
+                    time.sleep(1.5) # Give the physical antenna exactly 1.5s to boot
+                    
+                    # Look up all devices Volco has ever paired with
+                    paired_out = subprocess.run(["bluetoothctl", "devices"], capture_output=True, text=True).stdout
+                    
+                    for line in paired_out.strip().split('\n'):
+                        if line.startswith("Device"):
+                            mac = line.split()[1]
+                            print(f"🔄 [BT] Aggressively pulling connection from MAC: {mac}")
+                            # Force the connection from the Pi's side!
+                            subprocess.run(["bluetoothctl", "connect", mac], stdout=subprocess.DEVNULL)
+                            
+                    # Start the music bridge now that the connection is forced
+                    manage_audio_bridge("start")
+
+                # Fire the hunter in the background so it doesn't freeze the button
+                threading.Thread(target=aggressive_reconnect, daemon=True).start()
+                
             else:
                 print("\n🚨 [HARDWARE INTERRUPT] Single click! Triggering AI...")
                 _button_pressed_event = True
