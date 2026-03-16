@@ -1,6 +1,7 @@
 import json
 import os
 from bluezero import peripheral
+from bluezero import adapter  # ⚡ NEW IMPORT
 
 # ⚡ MUST MATCH THE REACT APP EXACTLY
 SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0'
@@ -33,10 +34,19 @@ def on_write(value, options):
 
 def main():
     print("📡 Starting Volco BLE Provisioning Server...")
+    
+    # ⚡ THE FIX: Automatically find the Pi's Bluetooth MAC Address
+    dongles = list(adapter.Adapter.available())
+    if not dongles:
+        print("❌ Error: No Bluetooth adapter found. Is Bluetooth turned on?")
+        return
+        
+    adapter_address = dongles[0].address
+    print(f"🔗 Using Bluetooth Antenna: {adapter_address}")
     print("Waiting for Volco App to beam credentials...")
     
-    # Create the BLE Peripheral named "Volco"
-    volco_device = peripheral.Peripheral('Volco', local_name='Volco')
+    # Create the BLE Peripheral using the real MAC address
+    volco_device = peripheral.Peripheral(adapter_address, local_name='Volco')
     
     # Add our custom Provisioning Service
     volco_device.add_service(srv_id=1, uuid=SERVICE_UUID, primary=True)
