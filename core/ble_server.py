@@ -1,7 +1,7 @@
 import json
 import os
 from bluezero import peripheral
-from bluezero import adapter  # ⚡ NEW IMPORT
+from bluezero import adapter  # ⚡ NEW IMPORT 
 
 # ⚡ MUST MATCH THE REACT APP EXACTLY
 SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0'
