@@ -10,7 +10,13 @@ from core.volco_audio_engine import VolcoSpotifyEngine
 
 # ⚡ 2. PLAY THE BOOT SOUND INSTANTLY!
 print("\n--- VOLCO OS INITIALIZING ---")
+
 play_sfx("./assets/sounds/boot.wav", async_play=True)
+spotify_engine = VolcoSpotifyEngine()
+spotify_ready = spotify_engine.force_activate_headset()
+
+if not spotify_ready:
+        print("⚠️ Warning: Spotify isn't linked yet, but Volco will keep trying in the background.")
 
 # ⚡ 3. NOW LOAD THE HEAVY AI LIBRARIES IN THE BACKGROUND
 from config.config_manager import config
@@ -45,9 +51,6 @@ _button_pressed_event = False
 volco_sleeping = False  
 _was_held_flag = False  
 conn_manager = None   # ⚡ ADD THIS LINE HERE 
-spotify_engine = VolcoSpotifyEngine()
-spotify_engine.force_activate_headset()
-
 if not IS_WINDOWS:
     try:
         from gpiozero import Button #type: ignore

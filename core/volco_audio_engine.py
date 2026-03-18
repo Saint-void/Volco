@@ -1,8 +1,10 @@
+import time
 import json
 import os
 import base64
 import requests
 import urllib.parse
+from zeroconf import Zeroconf, ServiceBrowser
 
 # ⚡ YOUR SPOTIFY APP CREDENTIALS
 CLIENT_ID = "ab7f761ecf374d629e3674d014674dd1"
@@ -39,6 +41,19 @@ class VolcoSpotifyEngine:
     def _get_headers(self):
         token = self._get_access_token()
         return {"Authorization": f"Bearer {token}"} if token else None
+
+    def discovery_ping(self):
+        """Forces the Pi to broadcast itself and look for Spotify services locally."""
+        print("📡 Sending Discovery Ping to local network...")
+        zeroconf = Zeroconf()
+        try:
+            # We look for Spotify Connect services for 3 seconds
+            # This 'poke' usually triggers the local daemon to announce itself
+            browser = ServiceBrowser(zeroconf, "_spotify-connect._tcp.local.", handlers=[])
+            time.sleep(3) 
+            print("📡 Discovery broadcast complete.")
+        finally:
+            zeroconf.close()
 
     # --- THE COMMANDS ---
 
@@ -99,11 +114,16 @@ class VolcoSpotifyEngine:
         if not headers: return False
 
         print("📡 Volco OS: Attempting to claim Spotify playback...")
+        
+        # ⚡ NEW: Send the local network ping BEFORE checking the API
+        self.discovery_ping()
+        
+        # Now check the API for the device
         device_id = self.get_volco_device_id(headers)
         
         if device_id:
             try:
-                # Force transfer to this ID even if nothing is playing
+                # Force transfer to this ID 
                 payload = {"device_ids": [device_id], "play": False}
                 res = requests.put(f"{self.base_url}/me/player", headers=headers, json=payload)
                 if res.status_code in [200, 202, 204]:
@@ -112,7 +132,7 @@ class VolcoSpotifyEngine:
             except Exception as e:
                 print(f"⚠️ Startup link failed: {e}")
         else:
-            print("❓ Volco Headset not visible to Spotify yet. It may need a 'discovery' ping.")
+            print("❌ Discovery Ping failed to wake the device. Ensure Raspotify is running.")
         return False
 
     def search_and_play(self, query, search_type="track"):
