@@ -113,7 +113,6 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                         if is_detected:
                             print("\n🛑 INTERRUPT TRIGGERED (Voice)!")
                             stop_event.set()
-                        # ⚡ UPDATED: Using our smart OS checker instead of strict keyboard!
                         if is_button_pressed(): 
                             print("\n🛑 INTERRUPT TRIGGERED (Button)!")
                             stop_event.set()
@@ -122,12 +121,14 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 t.start()
 
                 device_id = config["audio"].get("output_device_index")
-               # ⚡ FIX 1: Change channels from 1 to 2 to satisfy the Waveshare HAT
                 speaker_stream = p.open(format=pyaudio.paInt16, 
                                         channels=2, 
                                         rate=22050, 
                                         output=True)
                 
+                # ⚡ NEW: Flag to track if we are allowed to write to the speaker
+                voice_stream_active = True
+
                 while True:
                     if stop_event.is_set(): break
                     try:
@@ -136,15 +137,15 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                         
                         # ⚡ UDP AUDIO CHUNKS (Opcode 2)
                         if opcode == 2: 
-                            # ⚡ FIX 2: Convert Mono to Stereo on the fly
-                            stereo_data = audioop.tostereo(data, 2, 1, 1)
-                            speaker_stream.write(stereo_data)
+                            # ⚡ FIX: Only write audio if we haven't handed the speakers to Spotify!
+                            if voice_stream_active:
+                                stereo_data = audioop.tostereo(data, 2, 1, 1)
+                                speaker_stream.write(stereo_data)
                             
                         # ⚡ UDP TEXT COMMANDS (Opcode 1)
                         elif opcode == 1: 
                             msg = data 
                             
-                            # 🔍 WIRE DEBUG: Let's see what is actually arriving
                             print(f"📩 [DEBUG] Received Opcode 1: '{msg}' (Type: {type(msg)})")
 
                             # --- 🎵 SPOTIFY COMMAND CHECK ---
@@ -155,13 +156,15 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                                     query = payload.get("query")
                                     
                                     if action:
-                                        # ⚡ THE FIX: Stop voice playback immediately so Spotify can take the audio hardware
-                                        try:
-                                            speaker_stream.stop_stream()
-                                            speaker_stream.close()
-                                            print("🔇 Voice stream closed to release ALSA for Spotify.")
-                                        except:
-                                            pass
+                                        # ⚡ FIX: Close the stream AND flip the flag
+                                        if voice_stream_active:
+                                            try:
+                                                speaker_stream.stop_stream()
+                                                speaker_stream.close()
+                                                voice_stream_active = False # Stops the crash!
+                                                print("🔇 Voice stream closed to release ALSA for Spotify.")
+                                            except:
+                                                pass
 
                                         print(f"🎵 Executing Spotify Action: {action}")
                                         if action == "spotify_resume": spotify.play_resume()
@@ -187,9 +190,9 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 t.join()
                 wake_engine.stop()
                 
-                # Check if stream is still open before trying to close it
+                # ⚡ FIX: Safely check the flag before cleaning up
                 try:
-                    if speaker_stream.is_active():
+                    if voice_stream_active:
                         speaker_stream.stop_stream()
                         speaker_stream.close()
                 except:
