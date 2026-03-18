@@ -70,39 +70,43 @@ class VolcoSpotifyEngine:
         requests.post(f"{self.base_url}/me/player/previous", headers=headers)
         print("⏮️ Went to previous track")
 
+    def get_volco_device_id(self, headers):
+        """Hunts down the Volco Headset in your Spotify device list."""
+        import requests
+        try:
+            res = requests.get(f"{self.base_url}/me/player/devices", headers=headers)
+            if res.status_code == 200:
+                devices = res.json().get('devices', [])
+                for d in devices:
+                    # 🔍 DEBUG: Print out what Spotify actually sees
+                    print(f"📱 Found Device: {d['name']} (Active: {d['is_active']})")
+                    
+                    # Look for "volco" in the name (case-insensitive)
+                    if "volco" in d['name'].lower():
+                        return d['id']
+                
+                # If Volco isn't found, fallback to any active device
+                for d in devices:
+                    if d['is_active']:
+                        return d['id']
+        except Exception as e:
+            print(f"⚠️ Error fetching devices: {e}")
+        return None
+
     def search_and_play(self, query, search_type="track"):
-        """Searches for a track/album/playlist and plays it on Volco Headset."""
+        """Searches for media and forces playback onto Volco Headset."""
         import urllib.parse
         import requests
 
         headers = self._get_headers()
         if not headers: return
 
-        # --- 1. FIND VOLCO HEADSET ---
-        target_device_id = None
-        try:
-            devices_res = requests.get(f"{self.base_url}/me/player/devices", headers=headers)
-            if devices_res.status_code == 200:
-                devices = devices_res.json().get('devices', [])
-                
-                # Look for Volco Headset
-                for d in devices:
-                    if "volco headset" in d['name'].lower():
-                        target_device_id = d['id']
-                        print(f"📡 Found Target Device: {d['name']} ({target_device_id})")
-                        break
-                
-                # Fallback to an active device if Volco is asleep/hidden
-                if not target_device_id:
-                    for d in devices:
-                        if d['is_active']:
-                            target_device_id = d['id']
-                            print(f"⚠️ Volco Headset not found. Falling back to active device: {d['name']}")
-                            break
-            else:
-                print(f"⚠️ Failed to fetch devices: {devices_res.status_code}")
-        except Exception as e:
-            print(f"⚠️ Error fetching devices: {e}")
+        # --- 1. FIND & WAKE UP VOLCO HEADSET ---
+        target_device_id = self.get_volco_device_id(headers)
+
+        if not target_device_id:
+            print("❌ Could not find Volco Headset on Spotify's network. Try opening Spotify on your phone and selecting it once to wake it up.")
+            return
 
         # --- 2. SEARCH SPOTIFY ---
         print(f"🔍 Searching Spotify for {search_type}: '{query}'...")
@@ -128,20 +132,21 @@ class VolcoSpotifyEngine:
             print(f"⚠️ Couldn't find any {search_type} matching '{query}'.")
             return
 
-        # --- 3. EXECUTE PLAYBACK ---
+        # --- 3. FORCE PLAYBACK ---
         if uri_to_play:
-            print(f"🎯 Found it! URI: {uri_to_play}. Forcing playback...")
+            print(f"🎯 Found it! URI: {uri_to_play}. Transferring stream to Volco Headset...")
             
+            # ⚡ THE WAKE-UP CALL: Transfer playback to Volco Headset first
+            transfer_payload = {"device_ids": [target_device_id], "play": False}
+            requests.put(f"{self.base_url}/me/player", headers=headers, json=transfer_payload)
+            
+            # ⚡ THE PLAY COMMAND
             payload = {"uris": [uri_to_play]} if search_type == "track" else {"context_uri": uri_to_play}
+            play_url = f"{self.base_url}/me/player/play?device_id={target_device_id}"
             
-            # Construct the play URL, adding the device ID if we found it
-            play_url = f"{self.base_url}/me/player/play"
-            if target_device_id:
-                play_url += f"?device_id={target_device_id}"
-                
             play_res = requests.put(play_url, headers=headers, json=payload)
             
             if play_res.status_code in [200, 202, 204]:
-                print("✅ Playback started successfully!")
+                print("✅ Playback started successfully on Volco Headset!")
             else:
                 print(f"❌ Playback failed with status {play_res.status_code}: {play_res.text}")
