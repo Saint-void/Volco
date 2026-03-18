@@ -10,6 +10,7 @@ import audioop  # ⚡ NEW: Built-in audio operations library
 from core.volco_audio_engine import VolcoSpotifyEngine
 from config.config_manager import config
 from core.audio_io import play_sfx, print_audio_meter
+import string
 
 # Initialize the engine once
 spotify = VolcoSpotifyEngine()
@@ -98,6 +99,7 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
             if not conn_manager.is_connected(): return
 
             # --- PHASE 2: SPEAK ---
+            # --- PHASE 2: SPEAK ---
             if valid_speech:
                 print("🚀 Sending COMMIT...")
                 if not conn_manager.send_data("COMMIT"): return
@@ -126,8 +128,8 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                                         rate=22050, 
                                         output=True)
                 
-                # ⚡ NEW: Flag to track if we are allowed to write to the speaker
                 voice_stream_active = True
+                end_session_after_response = False  # ⚡ NEW: Flag to track if we should sleep after
 
                 while True:
                     if stop_event.is_set(): break
@@ -137,7 +139,6 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                         
                         # ⚡ UDP AUDIO CHUNKS (Opcode 2)
                         if opcode == 2: 
-                            # ⚡ FIX: Only write audio if we haven't handed the speakers to Spotify!
                             if voice_stream_active:
                                 stereo_data = audioop.tostereo(data, 2, 1, 1)
                                 speaker_stream.write(stereo_data)
@@ -145,7 +146,6 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                         # ⚡ UDP TEXT COMMANDS (Opcode 1)
                         elif opcode == 1: 
                             msg = data 
-                            
                             print(f"📩 [DEBUG] Received Opcode 1: '{msg}' (Type: {type(msg)})")
 
                             # --- 🎵 SPOTIFY COMMAND CHECK ---
@@ -155,13 +155,20 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                                     action = payload.get("action")
                                     query = payload.get("query")
                                     
+                                    # 🧹 Strip trailing punctuation from the search
+                                    if query:
+                                        import string
+                                        query = query.rstrip(string.punctuation)
+                                        
                                     if action:
-                                        # ⚡ FIX: Close the stream AND flip the flag
+                                        # ⚡ NEW: We executed an action, so end the conversation loop after this!
+                                        end_session_after_response = True 
+                                        
                                         if voice_stream_active:
                                             try:
                                                 speaker_stream.stop_stream()
                                                 speaker_stream.close()
-                                                voice_stream_active = False # Stops the crash!
+                                                voice_stream_active = False 
                                                 print("🔇 Voice stream closed to release ALSA for Spotify.")
                                             except:
                                                 pass
@@ -190,7 +197,6 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 t.join()
                 wake_engine.stop()
                 
-                # ⚡ FIX: Safely check the flag before cleaning up
                 try:
                     if voice_stream_active:
                         speaker_stream.stop_stream()
@@ -199,10 +205,13 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                     pass
                 
                 if not conn_manager.is_connected(): return 
+                
+                # ⚡ THE FIX IS HERE: Go back to wake word mode if music is playing!
+                if end_session_after_response:
+                    print("\n🎧 Action completed. Returning to wake word mode...")
+                    return 
+                
                 print("\n👂 Ready for next turn...")
-            else:
-                print("🗑️ Ignored noise. Sending CLEAR to server...")
-                conn_manager.send_data("CLEAR")
 
     except Exception as e:
         print(f"⚠️ Session Error: {e}")
