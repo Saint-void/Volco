@@ -93,6 +93,28 @@ class VolcoSpotifyEngine:
             print(f"⚠️ Error fetching devices: {e}")
         return None
 
+    def force_activate_headset(self):
+        """Attempts to wake up and claim the Volco Headset on startup."""
+        headers = self._get_headers()
+        if not headers: return False
+
+        print("📡 Volco OS: Attempting to claim Spotify playback...")
+        device_id = self.get_volco_device_id(headers)
+        
+        if device_id:
+            try:
+                # Force transfer to this ID even if nothing is playing
+                payload = {"device_ids": [device_id], "play": False}
+                res = requests.put(f"{self.base_url}/me/player", headers=headers, json=payload)
+                if res.status_code in [200, 202, 204]:
+                    print(f"✅ Volco Headset Linked & Ready.")
+                    return True
+            except Exception as e:
+                print(f"⚠️ Startup link failed: {e}")
+        else:
+            print("❓ Volco Headset not visible to Spotify yet. It may need a 'discovery' ping.")
+        return False
+
     def search_and_play(self, query, search_type="track"):
         """Searches for media and forces playback onto Volco Headset."""
         import urllib.parse

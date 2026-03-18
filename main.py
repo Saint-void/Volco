@@ -5,7 +5,8 @@ import threading
 import subprocess # ⚡ Added to manage the Bluetooth audio bridge!
 
 # ⚡ 1. ONLY IMPORT THE AUDIO ENGINE FIRST
-from core.audio_io import play_sfx 
+from core.audio_io import play_sfx
+from core.volco_audio_engine import VolcoSpotifyEngine 
 
 # ⚡ 2. PLAY THE BOOT SOUND INSTANTLY!
 print("\n--- VOLCO OS INITIALIZING ---")
@@ -44,6 +45,8 @@ _button_pressed_event = False
 volco_sleeping = False  
 _was_held_flag = False  
 conn_manager = None   # ⚡ ADD THIS LINE HERE 
+spotify_engine = VolcoSpotifyEngine()
+spotify_engine.force_activate_headset()
 
 if not IS_WINDOWS:
     try:
