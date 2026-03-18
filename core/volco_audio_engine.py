@@ -4,11 +4,21 @@ import os
 import base64
 import requests
 import urllib.parse
-from zeroconf import Zeroconf, ServiceBrowser
+from zeroconf import Zeroconf, ServiceBrowser, ServiceListener
 
 # ⚡ YOUR SPOTIFY APP CREDENTIALS
 CLIENT_ID = "ab7f761ecf374d629e3674d014674dd1"
 CLIENT_SECRET = "65742ae20dac40e7ba963f151412a2b8"
+
+
+class VolcoDiscoveryListener(ServiceListener):
+    def add_service(self, zc, type_, name): 
+        print(f"🔍 Found local service: {name}")
+        pass
+    def remove_service(self, zc, type_, name): 
+        pass
+    def update_service(self, zc, type_, name): 
+        pass
 
 class VolcoSpotifyEngine:
     def __init__(self):
@@ -44,22 +54,22 @@ class VolcoSpotifyEngine:
 
     def discovery_ping(self):
         """Forces the Pi to broadcast itself and look for Spotify services locally."""
-        from zeroconf import Zeroconf, ServiceBrowser
-        import time
-
-        # ⚡ THE FIX: A tiny class to catch the signals (even if we ignore them)
-        class DummyListener:
-            def add_service(self, zc, type_, name): pass
-            def remove_service(self, zc, type_, name): pass
-            def update_service(self, zc, type_, name): pass
-
         print("📡 Sending Discovery Ping to local network...")
+        
         zc = Zeroconf()
         try:
-            # We pass [DummyListener()] into the handlers list
-            browser = ServiceBrowser(zc, "_spotify-connect._tcp.local.", handlers=[DummyListener()])
+            # ⚡ Now we pass the properly typed listener
+            listener = VolcoDiscoveryListener()
+            browser = ServiceBrowser(zc, "_spotify-connect._tcp.local.", listener=listener)
+            
+            # Keep the searchlight on for 3 seconds
             time.sleep(3) 
             print("📡 Discovery broadcast complete.")
+            
+            # Give the Spotify Cloud 2 seconds to sync the wake-up signal
+            print("⏳ Waiting for Spotify Cloud to sync...")
+            time.sleep(2)
+            
         except Exception as e:
             print(f"⚠️ Discovery error: {e}")
         finally:
