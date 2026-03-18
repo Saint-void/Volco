@@ -137,7 +137,6 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                         # ⚡ UDP AUDIO CHUNKS (Opcode 2)
                         if opcode == 2: 
                             # ⚡ FIX 2: Convert Mono to Stereo on the fly
-                            # audioop.tostereo(data, byte_width, left_volume, right_volume)
                             stereo_data = audioop.tostereo(data, 2, 1, 1)
                             speaker_stream.write(stereo_data)
                             
@@ -156,6 +155,14 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                                     query = payload.get("query")
                                     
                                     if action:
+                                        # ⚡ THE FIX: Stop voice playback immediately so Spotify can take the audio hardware
+                                        try:
+                                            speaker_stream.stop_stream()
+                                            speaker_stream.close()
+                                            print("🔇 Voice stream closed to release ALSA for Spotify.")
+                                        except:
+                                            pass
+
                                         print(f"🎵 Executing Spotify Action: {action}")
                                         if action == "spotify_resume": spotify.play_resume()
                                         elif action == "spotify_pause": spotify.pause()
@@ -179,8 +186,14 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 stop_event.set()
                 t.join()
                 wake_engine.stop()
-                speaker_stream.stop_stream()
-                speaker_stream.close()
+                
+                # Check if stream is still open before trying to close it
+                try:
+                    if speaker_stream.is_active():
+                        speaker_stream.stop_stream()
+                        speaker_stream.close()
+                except:
+                    pass
                 
                 if not conn_manager.is_connected(): return 
                 print("\n👂 Ready for next turn...")
