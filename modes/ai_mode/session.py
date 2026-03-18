@@ -1,3 +1,4 @@
+import json
 import time
 import struct
 import pyaudio
@@ -6,6 +7,12 @@ import platform
 import sys
 import select
 import audioop  # ⚡ NEW: Built-in audio operations library
+from core.volco_audio_engine import VolcoSpotifyEngine
+from config.config_manager import config
+from core.audio_io import play_sfx, print_audio_meter
+
+# Initialize the engine once
+spotify = VolcoSpotifyEngine()
 
 # ⚡ THE SMART OS CHECKER
 IS_WINDOWS = platform.system() == "Windows"
@@ -17,7 +24,7 @@ else:
 def is_button_pressed():
     """Checks for Space/Shift on Windows, or the 'Enter' key on Linux."""
     if IS_WINDOWS:
-        return keyboard.is_pressed("space") or keyboard.is_pressed("right shift")
+        return keyboard.is_pressed("space") or keyboard.is_pressed("right shift")  # type: ignore
     else:
         # Non-blocking check to see if 'Enter' was pressed in the Linux terminal
         i, _, _ = select.select([sys.stdin], [], [], 0.0)
@@ -25,9 +32,6 @@ def is_button_pressed():
             sys.stdin.readline() # Clear the buffer
             return True
         return False
-
-from config.config_manager import config
-from core.audio_io import play_sfx, print_audio_meter
 
 def start_ai_session(wake_engine, conn_manager, noise_floor):
     """Handles the active listening and speaking phase for Vella AI."""
@@ -140,6 +144,28 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                         # ⚡ UDP TEXT COMMANDS (Opcode 1)
                         elif opcode == 1: 
                             msg = data 
+                            
+                            # --- 🎵 SPOTIFY COMMAND CHECK ---
+                            try:
+                                payload = json.loads(msg)
+                                action = payload.get("action")
+                                query = payload.get("query")
+                                
+                                if action:
+                                    print(f"🎵 Executing Spotify Action: {action}")
+                                    if action == "spotify_resume": spotify.play_resume()
+                                    elif action == "spotify_pause": spotify.pause()
+                                    elif action == "spotify_next": spotify.next_track()
+                                    elif action == "spotify_previous": spotify.previous_track()
+                                    elif action == "spotify_play_track": spotify.search_and_play(query, "track")
+                                    elif action == "spotify_play_album": spotify.search_and_play(query, "album")
+                                    elif action == "spotify_play_playlist": spotify.search_and_play(query, "playlist")
+                                    # Since it was a command, we can skip the rest of the loop
+                                    continue 
+                            except:
+                                # Not JSON? No problem, just treat it as a normal string
+                                pass
+
                             if msg == "END_OF_RESPONSE" or msg == "NO_SPEECH": 
                                 break
                                 
