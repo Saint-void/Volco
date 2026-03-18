@@ -99,7 +99,6 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
             if not conn_manager.is_connected(): return
 
             # --- PHASE 2: SPEAK ---
-            # --- PHASE 2: SPEAK ---
             if valid_speech:
                 print("🚀 Sending COMMIT...")
                 if not conn_manager.send_data("COMMIT"): return
@@ -129,7 +128,7 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                                         output=True)
                 
                 voice_stream_active = True
-                end_session_after_response = False  # ⚡ NEW: Flag to track if we should sleep after
+                should_exit_to_wake_mode = False # ⚡ THE KILL SWITCH
 
                 while True:
                     if stop_event.is_set(): break
@@ -137,80 +136,60 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                         opcode, data = conn_manager.recv_data()
                         if stop_event.is_set(): break
                         
-                        # ⚡ UDP AUDIO CHUNKS (Opcode 2)
-                        if opcode == 2: 
+                        if opcode == 2: # Audio
                             if voice_stream_active:
                                 stereo_data = audioop.tostereo(data, 2, 1, 1)
                                 speaker_stream.write(stereo_data)
                             
-                        # ⚡ UDP TEXT COMMANDS (Opcode 1)
-                        elif opcode == 1: 
+                        elif opcode == 1: # Commands
                             msg = data 
-                            print(f"📩 [DEBUG] Received Opcode 1: '{msg}' (Type: {type(msg)})")
-
-                            # --- 🎵 SPOTIFY COMMAND CHECK ---
                             if isinstance(msg, str) and msg.startswith("{"):
                                 try:
                                     payload = json.loads(msg)
-                                    action = payload.get("action")
-                                    query = payload.get("query")
-                                    
-                                    # 🧹 Strip trailing punctuation from the search
-                                    if query:
-                                        import string
-                                        query = query.rstrip(string.punctuation)
-                                        
-                                    if action:
-                                        # ⚡ NEW: We executed an action, so end the conversation loop after this!
-                                        end_session_after_response = True 
+                                    if payload.get("action"):
+                                        # ⚡ MUSIC STARTED: Set flag to stop the loop
+                                        should_exit_to_wake_mode = True 
                                         
                                         if voice_stream_active:
-                                            try:
-                                                speaker_stream.stop_stream()
-                                                speaker_stream.close()
-                                                voice_stream_active = False 
-                                                print("🔇 Voice stream closed to release ALSA for Spotify.")
-                                            except:
-                                                pass
+                                            speaker_stream.stop_stream()
+                                            speaker_stream.close()
+                                            voice_stream_active = False
+                                            print("🔇 Released ALSA for Spotify.")
 
-                                        print(f"🎵 Executing Spotify Action: {action}")
-                                        if action == "spotify_resume": spotify.play_resume()
+                                        # Execute Spotify action
+                                        query = payload.get("query", "").rstrip(".!?,")
+                                        action = payload.get("action")
+                                        
+                                        if action == "spotify_play_track": 
+                                            spotify.search_and_play(query, "track")
+                                        elif action == "spotify_resume": spotify.play_resume()
                                         elif action == "spotify_pause": spotify.pause()
                                         elif action == "spotify_next": spotify.next_track()
                                         elif action == "spotify_previous": spotify.previous_track()
-                                        elif action == "spotify_play_track": spotify.search_and_play(query, "track")
                                         elif action == "spotify_play_album": spotify.search_and_play(query, "album")
                                         elif action == "spotify_play_playlist": spotify.search_and_play(query, "playlist")
                                         continue 
-                                except Exception as json_err:
-                                    print(f"⚠️ [JSON ERROR] Failed to parse: {json_err}")
+                                except: pass
                             
                             if msg == "END_OF_RESPONSE" or msg == "NO_SPEECH": 
                                 break
                                 
                     except Exception as e:
-                        print(f"\n❌ [PLAYBACK ERROR] {e}")
-                        conn_manager.set_offline(f"Playback Error: {e}") 
+                        print(f"❌ Playback Error: {e}")
                         break
                 
+                # Cleanup
                 stop_event.set()
                 t.join()
                 wake_engine.stop()
-                
-                try:
-                    if voice_stream_active:
-                        speaker_stream.stop_stream()
-                        speaker_stream.close()
-                except:
-                    pass
-                
-                if not conn_manager.is_connected(): return 
-                
-                # ⚡ THE FIX IS HERE: Go back to wake word mode if music is playing!
-                if end_session_after_response:
-                    print("\n🎧 Action completed. Returning to wake word mode...")
-                    return 
-                
+                if voice_stream_active:
+                    speaker_stream.close()
+
+                # ⚡ EXIT SESSION: This stops Volco from recording the music!
+                if should_exit_to_wake_mode:
+                    print("\n🎵 Music mode active. Returning to Wake Word listener...")
+                    return # This exits start_ai_session entirely.
+
                 print("\n👂 Ready for next turn...")
 
     except Exception as e:

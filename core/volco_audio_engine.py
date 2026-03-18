@@ -71,10 +71,40 @@ class VolcoSpotifyEngine:
         print("⏮️ Went to previous track")
 
     def search_and_play(self, query, search_type="track"):
-        """Searches for a track/album/playlist and plays it."""
+        """Searches for a track/album/playlist and plays it on Volco Headset."""
+        import urllib.parse
+        import requests
+
         headers = self._get_headers()
         if not headers: return
 
+        # --- 1. FIND VOLCO HEADSET ---
+        target_device_id = None
+        try:
+            devices_res = requests.get(f"{self.base_url}/me/player/devices", headers=headers)
+            if devices_res.status_code == 200:
+                devices = devices_res.json().get('devices', [])
+                
+                # Look for Volco Headset
+                for d in devices:
+                    if "volco headset" in d['name'].lower():
+                        target_device_id = d['id']
+                        print(f"📡 Found Target Device: {d['name']} ({target_device_id})")
+                        break
+                
+                # Fallback to an active device if Volco is asleep/hidden
+                if not target_device_id:
+                    for d in devices:
+                        if d['is_active']:
+                            target_device_id = d['id']
+                            print(f"⚠️ Volco Headset not found. Falling back to active device: {d['name']}")
+                            break
+            else:
+                print(f"⚠️ Failed to fetch devices: {devices_res.status_code}")
+        except Exception as e:
+            print(f"⚠️ Error fetching devices: {e}")
+
+        # --- 2. SEARCH SPOTIFY ---
         print(f"🔍 Searching Spotify for {search_type}: '{query}'...")
         safe_query = urllib.parse.quote(query)
         search_url = f"{self.base_url}/search?q={safe_query}&type={search_type}&limit=1"
@@ -87,7 +117,6 @@ class VolcoSpotifyEngine:
         data = search_res.json()
         uri_to_play = None
 
-        # Extract the Spotify URI based on what we searched for
         try:
             if search_type == "track":
                 uri_to_play = data["tracks"]["items"][0]["uri"]
@@ -99,9 +128,20 @@ class VolcoSpotifyEngine:
             print(f"⚠️ Couldn't find any {search_type} matching '{query}'.")
             return
 
+        # --- 3. EXECUTE PLAYBACK ---
         if uri_to_play:
             print(f"🎯 Found it! URI: {uri_to_play}. Forcing playback...")
-            # If it's a track, Spotify expects it in a list called 'uris'. 
-            # If it's an album/playlist, it expects a string called 'context_uri'.
+            
             payload = {"uris": [uri_to_play]} if search_type == "track" else {"context_uri": uri_to_play}
-            requests.put(f"{self.base_url}/me/player/play", headers=headers, json=payload)
+            
+            # Construct the play URL, adding the device ID if we found it
+            play_url = f"{self.base_url}/me/player/play"
+            if target_device_id:
+                play_url += f"?device_id={target_device_id}"
+                
+            play_res = requests.put(play_url, headers=headers, json=payload)
+            
+            if play_res.status_code in [200, 202, 204]:
+                print("✅ Playback started successfully!")
+            else:
+                print(f"❌ Playback failed with status {play_res.status_code}: {play_res.text}")
