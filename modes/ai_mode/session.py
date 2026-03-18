@@ -145,27 +145,29 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                         elif opcode == 1: 
                             msg = data 
                             
-                            # --- 🎵 SPOTIFY COMMAND CHECK ---
-                            try:
-                                payload = json.loads(msg)
-                                action = payload.get("action")
-                                query = payload.get("query")
-                                
-                                if action:
-                                    print(f"🎵 Executing Spotify Action: {action}")
-                                    if action == "spotify_resume": spotify.play_resume()
-                                    elif action == "spotify_pause": spotify.pause()
-                                    elif action == "spotify_next": spotify.next_track()
-                                    elif action == "spotify_previous": spotify.previous_track()
-                                    elif action == "spotify_play_track": spotify.search_and_play(query, "track")
-                                    elif action == "spotify_play_album": spotify.search_and_play(query, "album")
-                                    elif action == "spotify_play_playlist": spotify.search_and_play(query, "playlist")
-                                    # Since it was a command, we can skip the rest of the loop
-                                    continue 
-                            except:
-                                # Not JSON? No problem, just treat it as a normal string
-                                pass
+                            # 🔍 WIRE DEBUG: Let's see what is actually arriving
+                            print(f"📩 [DEBUG] Received Opcode 1: '{msg}' (Type: {type(msg)})")
 
+                            # --- 🎵 SPOTIFY COMMAND CHECK ---
+                            if isinstance(msg, str) and msg.startswith("{"):
+                                try:
+                                    payload = json.loads(msg)
+                                    action = payload.get("action")
+                                    query = payload.get("query")
+                                    
+                                    if action:
+                                        print(f"🎵 Executing Spotify Action: {action}")
+                                        if action == "spotify_resume": spotify.play_resume()
+                                        elif action == "spotify_pause": spotify.pause()
+                                        elif action == "spotify_next": spotify.next_track()
+                                        elif action == "spotify_previous": spotify.previous_track()
+                                        elif action == "spotify_play_track": spotify.search_and_play(query, "track")
+                                        elif action == "spotify_play_album": spotify.search_and_play(query, "album")
+                                        elif action == "spotify_play_playlist": spotify.search_and_play(query, "playlist")
+                                        continue 
+                                except Exception as json_err:
+                                    print(f"⚠️ [JSON ERROR] Failed to parse: {json_err}")
+                            
                             if msg == "END_OF_RESPONSE" or msg == "NO_SPEECH": 
                                 break
                                 
