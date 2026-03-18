@@ -44,16 +44,26 @@ class VolcoSpotifyEngine:
 
     def discovery_ping(self):
         """Forces the Pi to broadcast itself and look for Spotify services locally."""
+        from zeroconf import Zeroconf, ServiceBrowser
+        import time
+
+        # ⚡ THE FIX: A tiny class to catch the signals (even if we ignore them)
+        class DummyListener:
+            def add_service(self, zc, type_, name): pass
+            def remove_service(self, zc, type_, name): pass
+            def update_service(self, zc, type_, name): pass
+
         print("📡 Sending Discovery Ping to local network...")
-        zeroconf = Zeroconf()
+        zc = Zeroconf()
         try:
-            # We look for Spotify Connect services for 3 seconds
-            # This 'poke' usually triggers the local daemon to announce itself
-            browser = ServiceBrowser(zeroconf, "_spotify-connect._tcp.local.", handlers=[])
+            # We pass [DummyListener()] into the handlers list
+            browser = ServiceBrowser(zc, "_spotify-connect._tcp.local.", handlers=[DummyListener()])
             time.sleep(3) 
             print("📡 Discovery broadcast complete.")
+        except Exception as e:
+            print(f"⚠️ Discovery error: {e}")
         finally:
-            zeroconf.close()
+            zc.close()
 
     # --- THE COMMANDS ---
 
