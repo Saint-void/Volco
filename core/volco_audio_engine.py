@@ -16,7 +16,7 @@ CLIENT_SECRET = "65742ae20dac40e7ba963f151412a2b8"
 
 class VolcoDiscoveryListener(ServiceListener):
     def add_service(self, zc, type_, name): 
-        print(f"🔍 Found local service: {name}")
+        pr  (f"🔍 Found local service: {name}")
         pass
     def remove_service(self, zc, type_, name): 
         pass
@@ -206,13 +206,11 @@ class VolcoSpotifyEngine:
         headers = self._get_headers()
         if not headers: return
 
-        # 🔥 STEP 1: Wake Spotify session
-        try:
-            requests.get(f"{self.base_url}/me/player", headers=headers)
-        except:
-            pass
+        # Step 1: wake Volco session
+        try: requests.get(f"{self.base_url}/me/player", headers=headers)
+        except: pass
 
-        # 🔥 STEP 2: Find device with retry
+        # Step 2: find device
         target_device_id = None
         for attempt in range(5):
             print(f"🔎 Locating Volco... Attempt {attempt+1}")
@@ -225,10 +223,10 @@ class VolcoSpotifyEngine:
             print("❌ Volco not found. Open Spotify and tap it once.")
             return
 
-        # 🔍 STEP 3: SEARCH
+        # Step 3: search Spotify (limit=5 for better results)
         print(f"🔍 Searching Spotify for {search_type}: '{query}'...")
         safe_query = urllib.parse.quote(query)
-        search_url = f"{self.base_url}/search?q={safe_query}&type={search_type}&limit=1"
+        search_url = f"{self.base_url}/search?q={safe_query}&type={search_type}&limit=5"
 
         search_res = requests.get(search_url, headers=headers)
         if search_res.status_code != 200:
@@ -236,60 +234,37 @@ class VolcoSpotifyEngine:
             return
 
         data = search_res.json()
-        uri_to_play = None
+        items = []
+        if search_type == "track": items = data.get("tracks", {}).get("items", [])
+        if search_type == "album": items = data.get("albums", {}).get("items", [])
+        if search_type == "playlist": items = data.get("playlists", {}).get("items", [])
 
-        try:
-            if search_type == "track":
-                uri_to_play = data["tracks"]["items"][0]["uri"]
-            elif search_type == "album":
-                uri_to_play = data["albums"]["items"][0]["uri"]
-            elif search_type == "playlist":
-                uri_to_play = data["playlists"]["items"][0]["uri"]
-        except IndexError:
-            print(f"⚠️ No {search_type} found for '{query}'.")
+        if not items:
+            # fallback to track search if album/playlist fails
+            if search_type in ["album", "playlist"]:
+                print(f"⚠️ Couldn’t find {search_type} '{query}', trying track search...")
+                self.search_and_play(query, search_type="track")
+            else:
+                print(f"⚠️ No {search_type} found for '{query}'.")
             return
 
-        if uri_to_play:
-            print("🎯 Found track. Taking over playback...")
+        uri_to_play = items[0]["uri"]
 
-            # 🔥 STEP 4: AGGRESSIVE TRANSFER (steal from TV/phone)
-            for _ in range(3):
-                requests.put(
-                    f"{self.base_url}/me/player",
-                    headers=headers,
-                    json={"device_ids": [target_device_id], "play": False}
-                )
-                time.sleep(1)
+        # Step 4: claim Volco device
+        for _ in range(3):
+            requests.put(
+                f"{self.base_url}/me/player",
+                headers=headers,
+                json={"device_ids": [target_device_id], "play": False}
+            )
+            time.sleep(1)
 
-            # 🔥 STEP 5: PLAY
-            payload = {"uris": [uri_to_play]} if search_type == "track" else {"context_uri": uri_to_play}
-            play_url = f"{self.base_url}/me/player/play?device_id={target_device_id}"
+        # Step 5: play
+        payload = {"uris": [uri_to_play]} if search_type == "track" else {"context_uri": uri_to_play}
+        play_url = f"{self.base_url}/me/player/play?device_id={target_device_id}"
+        play_res = requests.put(play_url, headers=headers, json=payload)
 
-            play_res = requests.put(play_url, headers=headers, json=payload)
-
-            if play_res.status_code in [200, 202, 204]:
-                print("✅ Playback started on Volco!")
-            else:
-                print(f"❌ Playback failed: {play_res.status_code} {play_res.text}")
-            
-            # ⚡ THE DJ AUTOPLAY FIX (Corrected)
-            if search_type == "track":
-                track_id = uri_to_play.split(":")[-1] # Extract just the ID
-                print("🎧 DJ Volco: Fetching similar songs to keep the vibe going...")
-                
-                # Ask Spotify for 3 recommended tracks based on this song
-                rec_url = f"{self.base_url}/recommendations?seed_tracks={track_id}&limit=3"
-                rec_res = requests.get(rec_url, headers=headers)
-                
-                if rec_res.status_code == 200:
-                    recommended_tracks = rec_res.json().get('tracks', [])
-                    for t in recommended_tracks:
-                        # Add each to the queue
-                        q_url = f"{self.base_url}/me/player/queue?uri={t['uri']}"
-                        
-                        # ⚡ FIXED: Using target_device_id
-                        if target_device_id: 
-                            q_url += f"&device_id={target_device_id}"
-                            
-                        requests.post(q_url, headers=headers)
-                    print("✅ Queue loaded with similar tracks!")
+        if play_res.status_code in [200, 202, 204]:
+            print("✅ Playback started on Volco!")
+        else:
+            print(f"❌ Playback failed: {play_res.status_code} {play_res.text}")
