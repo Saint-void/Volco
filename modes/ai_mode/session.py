@@ -162,10 +162,16 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                                         
                                         if action == "spotify_play_track": 
                                             spotify.search_and_play(query, "track")
-                                        elif action == "spotify_resume": spotify.play_resume()
-                                        elif action == "spotify_pause": spotify.pause()
-                                        elif action == "spotify_next": spotify.next_track()
-                                        elif action == "spotify_previous": spotify.previous_track()
+                                        
+                                        # ⚡ NEW: Catch the media controls
+                                        elif action == "spotify_next":
+                                            spotify.control_playback("next")
+                                        elif action == "spotify_previous":
+                                            spotify.control_playback("previous")
+                                        elif action == "spotify_pause":
+                                            spotify.control_playback("pause")
+                                        elif action == "spotify_resume":
+                                            spotify.control_playback("resume")
                                         elif action == "spotify_play_album": spotify.search_and_play(query, "album")
                                         elif action == "spotify_play_playlist": spotify.search_and_play(query, "playlist")
                                         continue 

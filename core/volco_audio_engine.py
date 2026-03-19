@@ -2,9 +2,12 @@ import time
 import json
 import os
 import base64
+from wsgiref import headers
 import requests
 import urllib.parse
 from zeroconf import Zeroconf, ServiceBrowser, ServiceListener
+import urllib.parse
+import requests
 
 # ⚡ YOUR SPOTIFY APP CREDENTIALS
 CLIENT_ID = "ab7f761ecf374d629e3674d014674dd1"
@@ -134,47 +137,99 @@ class VolcoSpotifyEngine:
         if not headers: return False
 
         print("📡 Volco OS: Attempting to claim Spotify playback...")
-        
-        # ⚡ NEW: Send the local network ping BEFORE checking the API
+
+        # 🔥 STEP 1: Wake Spotify session
+        try:
+            requests.get(f"{self.base_url}/me/player", headers=headers)
+        except:
+            pass
+
+        # 🔥 STEP 2: Discovery ping (your existing magic)
         self.discovery_ping()
-        
-        # Now check the API for the device
-        device_id = self.get_volco_device_id(headers)
-        
+
+        # 🔥 STEP 3: Retry to find device
+        device_id = None
+        for attempt in range(5):
+            print(f"🔎 Searching for Volco device... Attempt {attempt+1}")
+            device_id = self.get_volco_device_id(headers)
+            if device_id:
+                break
+            time.sleep(1.5)
+
         if device_id:
             try:
-                # Force transfer to this ID 
-                payload = {"device_ids": [device_id], "play": False}
-                res = requests.put(f"{self.base_url}/me/player", headers=headers, json=payload)
-                if res.status_code in [200, 202, 204]:
-                    print(f"✅ Volco Headset Linked & Ready.")
-                    return True
+                # 🔥 STEP 4: AGGRESSIVE TRANSFER (steal session from TV/phone/etc)
+                for _ in range(3):
+                    res = requests.put(
+                        f"{self.base_url}/me/player",
+                        headers=headers,
+                        json={"device_ids": [device_id], "play": False}
+                    )
+                    if res.status_code in [200, 202, 204]:
+                        print("✅ Volco Headset Linked & Ready.")
+                        return True
+                    time.sleep(1)
+
             except Exception as e:
                 print(f"⚠️ Startup link failed: {e}")
         else:
-            print("❌ Discovery Ping failed to wake the device. Ensure Raspotify is running.")
+            print("❌ Could not find Volco device. Open Spotify once to wake it up.")
+
         return False
-
-    def search_and_play(self, query, search_type="track"):
-        """Searches for media and forces playback onto Volco Headset."""
-        import urllib.parse
+    
+    def control_playback(self, command):
+        """Handles next, previous, pause, and resume."""
         import requests
-
         headers = self._get_headers()
         if not headers: return
 
-        # --- 1. FIND & WAKE UP VOLCO HEADSET ---
-        target_device_id = self.get_volco_device_id(headers)
+        # Try to target Volco specifically, but fallback to any active session
+        device_id = self.get_volco_device_id(headers)
+        device_query = f"?device_id={device_id}" if device_id else ""
+
+        endpoints = {
+            "next": (requests.post, f"{self.base_url}/me/player/next{device_query}"),
+            "previous": (requests.post, f"{self.base_url}/me/player/previous{device_query}"),
+            "pause": (requests.put, f"{self.base_url}/me/player/pause{device_query}"),
+            "resume": (requests.put, f"{self.base_url}/me/player/play{device_query}")
+        }
+
+        if command in endpoints:
+            method, url = endpoints[command]
+            res = method(url, headers=headers)
+            if res.status_code in [200, 202, 204]:
+                print(f"✅ Spotify: {command.capitalize()} executed.")
+            else:
+                print(f"❌ Spotify {command} failed: {res.status_code}")
+
+    def search_and_play(self, query, search_type="track"):
+        headers = self._get_headers()
+        if not headers: return
+
+        # 🔥 STEP 1: Wake Spotify session
+        try:
+            requests.get(f"{self.base_url}/me/player", headers=headers)
+        except:
+            pass
+
+        # 🔥 STEP 2: Find device with retry
+        target_device_id = None
+        for attempt in range(5):
+            print(f"🔎 Locating Volco... Attempt {attempt+1}")
+            target_device_id = self.get_volco_device_id(headers)
+            if target_device_id:
+                break
+            time.sleep(1.5)
 
         if not target_device_id:
-            print("❌ Could not find Volco Headset on Spotify's network. Try opening Spotify on your phone and selecting it once to wake it up.")
+            print("❌ Volco not found. Open Spotify and tap it once.")
             return
 
-        # --- 2. SEARCH SPOTIFY ---
+        # 🔍 STEP 3: SEARCH
         print(f"🔍 Searching Spotify for {search_type}: '{query}'...")
         safe_query = urllib.parse.quote(query)
         search_url = f"{self.base_url}/search?q={safe_query}&type={search_type}&limit=1"
-        
+
         search_res = requests.get(search_url, headers=headers)
         if search_res.status_code != 200:
             print("❌ Search failed.")
@@ -191,24 +246,50 @@ class VolcoSpotifyEngine:
             elif search_type == "playlist":
                 uri_to_play = data["playlists"]["items"][0]["uri"]
         except IndexError:
-            print(f"⚠️ Couldn't find any {search_type} matching '{query}'.")
+            print(f"⚠️ No {search_type} found for '{query}'.")
             return
 
-        # --- 3. FORCE PLAYBACK ---
         if uri_to_play:
-            print(f"🎯 Found it! URI: {uri_to_play}. Transferring stream to Volco Headset...")
-            
-            # ⚡ THE WAKE-UP CALL: Transfer playback to Volco Headset first
-            transfer_payload = {"device_ids": [target_device_id], "play": False}
-            requests.put(f"{self.base_url}/me/player", headers=headers, json=transfer_payload)
-            
-            # ⚡ THE PLAY COMMAND
+            print("🎯 Found track. Taking over playback...")
+
+            # 🔥 STEP 4: AGGRESSIVE TRANSFER (steal from TV/phone)
+            for _ in range(3):
+                requests.put(
+                    f"{self.base_url}/me/player",
+                    headers=headers,
+                    json={"device_ids": [target_device_id], "play": False}
+                )
+                time.sleep(1)
+
+            # 🔥 STEP 5: PLAY
             payload = {"uris": [uri_to_play]} if search_type == "track" else {"context_uri": uri_to_play}
             play_url = f"{self.base_url}/me/player/play?device_id={target_device_id}"
-            
+
             play_res = requests.put(play_url, headers=headers, json=payload)
-            
+
             if play_res.status_code in [200, 202, 204]:
-                print("✅ Playback started successfully on Volco Headset!")
+                print("✅ Playback started on Volco!")
             else:
-                print(f"❌ Playback failed with status {play_res.status_code}: {play_res.text}")
+                print(f"❌ Playback failed: {play_res.status_code} {play_res.text}")
+            
+            # ⚡ THE DJ AUTOPLAY FIX (Corrected)
+            if search_type == "track":
+                track_id = uri_to_play.split(":")[-1] # Extract just the ID
+                print("🎧 DJ Volco: Fetching similar songs to keep the vibe going...")
+                
+                # Ask Spotify for 3 recommended tracks based on this song
+                rec_url = f"{self.base_url}/recommendations?seed_tracks={track_id}&limit=3"
+                rec_res = requests.get(rec_url, headers=headers)
+                
+                if rec_res.status_code == 200:
+                    recommended_tracks = rec_res.json().get('tracks', [])
+                    for t in recommended_tracks:
+                        # Add each to the queue
+                        q_url = f"{self.base_url}/me/player/queue?uri={t['uri']}"
+                        
+                        # ⚡ FIXED: Using target_device_id
+                        if target_device_id: 
+                            q_url += f"&device_id={target_device_id}"
+                            
+                        requests.post(q_url, headers=headers)
+                    print("✅ Queue loaded with similar tracks!")
