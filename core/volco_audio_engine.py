@@ -16,7 +16,7 @@ CLIENT_SECRET = "65742ae20dac40e7ba963f151412a2b8"
 
 class VolcoDiscoveryListener(ServiceListener):
     def add_service(self, zc, type_, name): 
-        pr  (f"🔍 Found local service: {name}")
+        print(f"🔍 Found local service: {name}")
         pass
     def remove_service(self, zc, type_, name): 
         pass
