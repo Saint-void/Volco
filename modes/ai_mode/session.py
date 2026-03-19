@@ -109,14 +109,13 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 stop_event = threading.Event()
                 
                 def watch_for_interrupt():
-                    while not stop_event.is_set():
-                        is_detected, _ = wake_engine.read_and_process()
-                        if is_detected:
-                            print("\n🛑 INTERRUPT TRIGGERED (Voice)!")
-                            stop_event.set()
-                        if is_button_pressed(): 
-                            print("\n🛑 INTERRUPT TRIGGERED (Button)!")
-                            stop_event.set()
+                    data = mic_stream.read(chunk, exception_on_overflow=False)
+                    volume = max(struct.unpack_from("%dh" % chunk, data))
+
+                    if volume > dynamic_threshold:
+                        print("\n🛑 INTERRUPT (voice spike)!")
+                        conn_manager.send_data("INTERRUPT")
+                        stop_event.set()
 
                 t = threading.Thread(target=watch_for_interrupt)
                 t.start()
