@@ -5,15 +5,12 @@ import threading
 import subprocess # ⚡ Added to manage the Bluetooth audio bridge!
 
 # ⚡ 1. ONLY IMPORT THE AUDIO ENGINE FIRST
-from core.audio_io import play_sfx
-from core.volco_audio_engine import VolcoSpotifyEngine 
+from core.audio_io import play_sfx 
 
 # ⚡ 2. PLAY THE BOOT SOUND INSTANTLY!
 print("\n--- VOLCO OS INITIALIZING ---")
 
 play_sfx("./assets/sounds/boot.wav", async_play=True)
-spotify_engine = VolcoSpotifyEngine()
-spotify_ready = spotify_engine.force_activate_headset()
 
 if not spotify_ready:
         print("⚠️ Warning: Spotify isn't linked yet, but Volco will keep trying in the background.")
@@ -27,6 +24,7 @@ from core.data_pipe import start_data_pipe
 from core.bluetooth_pairing import enable_bluetooth_pairing 
 from modes.ai_mode.session import start_ai_session
 from modes.bt_mode.media_control import pause_media, resume_media
+from core.volco_audio_engine import VolcoSpotifyEngine
 
 # ==========================================
 # 🎵 BLUETOOTH BRIDGE MANAGER
@@ -40,6 +38,12 @@ def manage_audio_bridge(action="stop"):
         # Restart the bridge in the background silently
         subprocess.Popen(["bluealsa-aplay", "00:00:00:00:00:00"], 
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+# ===========================================
+# Spotify Engine Initialization (after the boot sound)
+# ===========================================
+spotify_engine = VolcoSpotifyEngine()
+spotify_ready = spotify_engine.force_activate_headset()
 
 # ==========================================
 # 🔘 HARDWARE BUTTON & POWER MANAGEMENT
