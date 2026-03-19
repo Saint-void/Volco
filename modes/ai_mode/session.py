@@ -14,6 +14,7 @@ import string
 
 # Initialize the engine once
 spotify = VolcoSpotifyEngine()
+button_pressed_flag = threading.Event()
 
 # ⚡ THE SMART OS CHECKER
 IS_WINDOWS = platform.system() == "Windows"
@@ -110,13 +111,12 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
 
                 # ⚡ BUTTON INTERRUPT WATCHER
                 def watch_for_interrupt():
-                    global _button_pressed_event
                     while not stop_event.is_set():
-                        if _button_pressed_event:
+                        if button_pressed_flag.is_set():  # ✅ use the proper Event object
                             print("\n🛑 INTERRUPT (button)!")
                             conn_manager.send_data("INTERRUPT")
                             stop_event.set()
-                            _button_pressed_event = False
+                            button_pressed_flag.clear()  # reset for next session
                         time.sleep(0.05)  # Polling interval
 
                 t = threading.Thread(target=watch_for_interrupt, daemon=True)

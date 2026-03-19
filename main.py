@@ -23,6 +23,7 @@ from core.bluetooth_pairing import enable_bluetooth_pairing
 from modes.ai_mode.session import start_ai_session
 from modes.bt_mode.media_control import pause_media, resume_media
 from core.volco_audio_engine import VolcoSpotifyEngine
+from modes.ai_mode import session  # import the session.py flag for button interrupts
 
 # ==========================================
 # 🎵 BLUETOOTH BRIDGE MANAGER
@@ -129,7 +130,7 @@ if not IS_WINDOWS:
                 
             else:
                 print("\n🚨 [HARDWARE INTERRUPT] Single click! Triggering AI...")
-                _button_pressed_event = True
+                session.button_pressed_flag.set()  # ✅ Set the Event flag for the session to detect
                 threading.Thread(target=pause_media, daemon=True).start()
                 manage_audio_bridge("stop")
 
