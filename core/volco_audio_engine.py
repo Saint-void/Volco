@@ -149,7 +149,7 @@ class VolcoSpotifyEngine:
 
         # 🔥 STEP 3: Retry to find device
         device_id = None
-        for attempt in range(5):
+        for attempt in range(1):
             print(f"🔎 Searching for Volco device... Attempt {attempt+1}")
             device_id = self.get_volco_device_id(headers)
             if device_id:
