@@ -12,11 +12,6 @@ from core.volco_audio_engine import VolcoSpotifyEngine
 print("\n--- VOLCO OS INITIALIZING ---")
 
 play_sfx("./assets/sounds/boot.wav", async_play=True)
-spotify_engine = VolcoSpotifyEngine()
-spotify_ready = spotify_engine.force_activate_headset()
-
-if not spotify_ready:
-        print("⚠️ Warning: Spotify isn't linked yet, but Volco will keep trying in the background.")
 
 # ⚡ 3. NOW LOAD THE HEAVY AI LIBRARIES IN THE BACKGROUND
 from config.config_manager import config
@@ -142,6 +137,12 @@ def check_for_button():
         _button_pressed_event = False 
         return True
     return False
+
+spotify_engine = VolcoSpotifyEngine()
+spotify_ready = spotify_engine.force_activate_headset()
+
+if not spotify_ready:
+        print("⚠️ Warning: Spotify isn't linked yet, but Volco will keep trying in the background.")
 
 # =============================
 # 🚀 THE DISPATCHER (MAIN OS)
