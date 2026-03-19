@@ -103,23 +103,42 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 print("🚀 Sending COMMIT...")
                 if not conn_manager.send_data("COMMIT"): return
 
-                print("🤖 Volco Speaking... (Press Button to Interrupt)")
-
-                wake_engine.start()
+                print("🤖 Volco Speaking... (Press 'Enter' to Interrupt)")
+                
+                wake_engine.start() 
                 stop_event = threading.Event()
-
-                # ⚡ BUTTON INTERRUPT WATCHER
+                
                 def watch_for_interrupt():
-                    global _button_pressed_event
-                    while not stop_event.is_set():
-                        if _button_pressed_event:
-                            print("\n🛑 INTERRUPT (button)!")
-                            conn_manager.send_data("INTERRUPT")
-                            stop_event.set()
-                            _button_pressed_event = False
-                        time.sleep(0.05)  # Polling interval
+                    try:
+                        interrupt_stream = p.open(
+                            format=pyaudio.paInt16,
+                            channels=channels,
+                            rate=rate,
+                            input=True,
+                            frames_per_buffer=chunk
+                        )
 
-                t = threading.Thread(target=watch_for_interrupt, daemon=True)
+                        while not stop_event.is_set():
+                            try:
+                                data = interrupt_stream.read(chunk, exception_on_overflow=False)
+                            except OSError:
+                                break  # mic got closed somewhere else
+
+                            volume = max(struct.unpack_from("%dh" % chunk, data))
+
+                            if volume > dynamic_threshold:
+                                print("\n🛑 INTERRUPT (voice spike)!")
+                                conn_manager.send_data("INTERRUPT")
+                                stop_event.set()
+                                break
+
+                        interrupt_stream.stop_stream()
+                        interrupt_stream.close()
+
+                    except Exception as e:
+                        print(f"⚠️ Interrupt Thread Error: {e}")
+
+                t = threading.Thread(target=watch_for_interrupt)
                 t.start()
 
                 device_id = config["audio"].get("output_device_index")
@@ -127,29 +146,30 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                                         channels=2, 
                                         rate=22050, 
                                         output=True)
-
+                
                 voice_stream_active = True
-                should_exit_to_wake_mode = False  # ⚡ THE KILL SWITCH
+                should_exit_to_wake_mode = False # ⚡ THE KILL SWITCH
 
                 while True:
                     if stop_event.is_set(): break
                     try:
                         opcode, data = conn_manager.recv_data()
                         if stop_event.is_set(): break
-
-                        if opcode == 2:  # Audio
+                        
+                        if opcode == 2: # Audio
                             if voice_stream_active:
                                 stereo_data = audioop.tostereo(data, 2, 1, 1)
                                 speaker_stream.write(stereo_data)
-
-                        elif opcode == 1:  # Commands
-                            msg = data
+                            
+                        elif opcode == 1: # Commands
+                            msg = data 
                             if isinstance(msg, str) and msg.startswith("{"):
                                 try:
                                     payload = json.loads(msg)
                                     if payload.get("action"):
-                                        should_exit_to_wake_mode = True
-
+                                        # ⚡ MUSIC STARTED: Set flag to stop the loop
+                                        should_exit_to_wake_mode = True 
+                                        
                                         if voice_stream_active:
                                             speaker_stream.stop_stream()
                                             speaker_stream.close()
@@ -159,8 +179,11 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                                         # Execute Spotify action
                                         query = payload.get("query", "").rstrip(".!?,")
                                         action = payload.get("action")
-                                        if action == "spotify_play_track":
+                                        
+                                        if action == "spotify_play_track": 
                                             spotify.search_and_play(query, "track")
+                                        
+                                        # ⚡ NEW: Catch the media controls
                                         elif action == "spotify_next":
                                             spotify.control_playback("next")
                                         elif action == "spotify_previous":
@@ -169,20 +192,18 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                                             spotify.control_playback("pause")
                                         elif action == "spotify_resume":
                                             spotify.control_playback("resume")
-                                        elif action == "spotify_play_album":
-                                            spotify.search_and_play(query, "album")
-                                        elif action == "spotify_play_playlist":
-                                            spotify.search_and_play(query, "playlist")
-                                        continue
+                                        elif action == "spotify_play_album": spotify.search_and_play(query, "album")
+                                        elif action == "spotify_play_playlist": spotify.search_and_play(query, "playlist")
+                                        continue 
                                 except: pass
-
-                            if msg == "END_OF_RESPONSE" or msg == "NO_SPEECH":
+                            
+                            if msg == "END_OF_RESPONSE" or msg == "NO_SPEECH": 
                                 break
-
+                                
                     except Exception as e:
                         print(f"❌ Playback Error: {e}")
                         break
-
+                
                 # Cleanup
                 stop_event.set()
                 t.join()
@@ -190,9 +211,10 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 if voice_stream_active:
                     speaker_stream.close()
 
+                # ⚡ EXIT SESSION: This stops Volco from recording the music!
                 if should_exit_to_wake_mode:
                     print("\n🎵 Music mode active. Returning to Wake Word listener...")
-                    return
+                    return # This exits start_ai_session entirely.
 
                 print("\n👂 Ready for next turn...")
 
