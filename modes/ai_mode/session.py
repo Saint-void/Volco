@@ -109,13 +109,34 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 stop_event = threading.Event()
                 
                 def watch_for_interrupt():
-                    data = mic_stream.read(chunk, exception_on_overflow=False)
-                    volume = max(struct.unpack_from("%dh" % chunk, data))
+                    try:
+                        interrupt_stream = p.open(
+                            format=pyaudio.paInt16,
+                            channels=channels,
+                            rate=rate,
+                            input=True,
+                            frames_per_buffer=chunk
+                        )
 
-                    if volume > dynamic_threshold:
-                        print("\n🛑 INTERRUPT (voice spike)!")
-                        conn_manager.send_data("INTERRUPT")
-                        stop_event.set()
+                        while not stop_event.is_set():
+                            try:
+                                data = interrupt_stream.read(chunk, exception_on_overflow=False)
+                            except OSError:
+                                break  # mic got closed somewhere else
+
+                            volume = max(struct.unpack_from("%dh" % chunk, data))
+
+                            if volume > dynamic_threshold:
+                                print("\n🛑 INTERRUPT (voice spike)!")
+                                conn_manager.send_data("INTERRUPT")
+                                stop_event.set()
+                                break
+
+                        interrupt_stream.stop_stream()
+                        interrupt_stream.close()
+
+                    except Exception as e:
+                        print(f"⚠️ Interrupt Thread Error: {e}")
 
                 t = threading.Thread(target=watch_for_interrupt)
                 t.start()
