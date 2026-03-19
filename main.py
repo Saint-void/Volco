@@ -7,7 +7,7 @@ import subprocess # ⚡ Added to manage the Bluetooth audio bridge!
 # ⚡ 1. ONLY IMPORT THE AUDIO ENGINE FIRST
 from core.audio_io import play_sfx 
 
-# ⚡ 2. PLAY THE BOOT SOUND INSTANTLY!
+# ⚡ 2. PLAY THE BOOT SOUND INSTANTLY!f
 print("\n--- VOLCO OS INITIALIZING ---")
 
 play_sfx("./assets/sounds/boot.wav", async_play=True)
