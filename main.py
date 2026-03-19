@@ -12,8 +12,6 @@ print("\n--- VOLCO OS INITIALIZING ---")
 
 play_sfx("./assets/sounds/boot.wav", async_play=True)
 
-if not spotify_ready:
-        print("⚠️ Warning: Spotify isn't linked yet, but Volco will keep trying in the background.")
 
 # ⚡ 3. NOW LOAD THE HEAVY AI LIBRARIES IN THE BACKGROUND
 from config.config_manager import config
@@ -44,6 +42,10 @@ def manage_audio_bridge(action="stop"):
 # ===========================================
 spotify_engine = VolcoSpotifyEngine()
 spotify_ready = spotify_engine.force_activate_headset()
+
+
+if not spotify_ready:
+        print("⚠️ Warning: Spotify isn't linked yet, but Volco will keep trying in the background.")
 
 # ==========================================
 # 🔘 HARDWARE BUTTON & POWER MANAGEMENT
