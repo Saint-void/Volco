@@ -138,11 +138,7 @@ def check_for_button():
         return True
     return False
 
-spotify_engine = VolcoSpotifyEngine()
-spotify_ready = spotify_engine.force_activate_headset()
 
-if not spotify_ready:
-        print("⚠️ Warning: Spotify isn't linked yet, but Volco will keep trying in the background.")
 
 # =============================
 # 🚀 THE DISPATCHER (MAIN OS)
@@ -167,7 +163,7 @@ def main():
     conn_manager.connect()
 
     # ⚡ 6. Calibrate the microphone
-    current_noise_floor = calibrate_mic(duration=1.0)    
+    current_noise_floor = calibrate_mic(duration=0.5)    
     
     try:
         wake_engine.start()
@@ -264,6 +260,13 @@ def main():
         manage_audio_bridge("stop")
         conn_manager.close()
         wake_engine.cleanup()
+        
+spotify_engine = VolcoSpotifyEngine()
+spotify_ready = spotify_engine.force_activate_headset()
+
+if not spotify_ready:
+        print("⚠️ Warning: Spotify isn't linked yet, but Volco will keep trying in the background.")
+
 
 if __name__ == "__main__":                                  
     while True:
