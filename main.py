@@ -79,6 +79,10 @@ if not IS_WINDOWS:
                 # ⚡ PHYSICAL HARDWARE SHUTDOWN: Turn off the Bluetooth radio completely
                 subprocess.run(["bluetoothctl", "power", "off"], stdout=subprocess.DEVNULL)
 
+                # ⚡ NEW: Kill the Raspotify background service to stop the music!
+                print("🛑 [POWER] Shutting down Raspotify...")
+                subprocess.run(["sudo", "systemctl", "stop", "raspotify"], stderr=subprocess.DEVNULL)
+
         def button_released():
             """Fires when you let go of the button."""
             global _was_held_flag, volco_sleeping, _button_pressed_event
@@ -98,7 +102,10 @@ if not IS_WINDOWS:
                 threading.Thread(target=play_sfx, args=("./assets/sounds/bt_pairing.wav",)).start()
                 time.sleep(1.2) # Let the Bluetooth hardware initialize before trying to connect
                 
-                # ⚡ NEW: The Aggressive Reconnect Hunter
+                # ⚡ NEW: Boot the Raspotify service back up!
+                print("🎵 [POWER] Starting Raspotify...")
+                subprocess.run(["sudo", "systemctl", "start", "raspotify"], stderr=subprocess.DEVNULL)
+
                 # ⚡ NEW: The Aggressive Reconnect Hunter
                 def aggressive_reconnect():
                     global conn_manager  # ⚡ ADD THIS LINE
