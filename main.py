@@ -37,16 +37,6 @@ def manage_audio_bridge(action="stop"):
         # Restart the bridge in the background silently
         subprocess.Popen(["bluealsa-aplay", "00:00:00:00:00:00"], 
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
-# ===========================================
-# Spotify Engine Initialization (after the boot sound)
-# ===========================================
-spotify_engine = VolcoSpotifyEngine()
-spotify_ready = spotify_engine.force_activate_headset()
-
-
-if not spotify_ready:
-        print("⚠️ Warning: Spotify isn't linked yet, but Volco will keep trying in the background.")
 
 # ==========================================
 # 🔘 HARDWARE BUTTON & POWER MANAGEMENT
@@ -161,26 +151,40 @@ def check_for_button():
 # 🚀 THE DISPATCHER (MAIN OS)
 # =============================
 def main():
-    global conn_manager  # ⚡ ADD THIS LINE
+    global conn_manager
 
-    # 1. Initialize the Connection Manager FIRST
+    print("\n--- VOLCO OS CORE BOOT ---")
+
+    # 1️⃣ CONNECTION MANAGER FIRST (lightweight)
     conn_manager = ConnectionManager()
-    
-    # ⚡ 2. START BLUETOOTH & Pass the manager to the pipe!
-    enable_bluetooth_pairing()
-    start_data_pipe(conn_manager)
 
-    # ⚡ 3. Start the audio bridge automatically so music works on boot!
+    # 2️⃣ BLUETOOTH FIRST (your requirement)
+    print("🔵 [BOOT] Initializing Bluetooth stack...")
+    enable_bluetooth_pairing()
     manage_audio_bridge("start")
 
-    # ⚡ 4. Load the Wake Engine
+    # 3️⃣ DATA PIPE (depends on BT sometimes)
+    start_data_pipe(conn_manager)
+
+    # 4️⃣ NOW LOAD AI SYSTEMS
+    print("🧠 [BOOT] Initializing AI systems...")
     wake_engine = WakeWordEngine()
-    
-    # ⚡ 5. Attempt Connection
+
+    # 5️⃣ NETWORK CONNECTION
     conn_manager.connect()
 
-    # ⚡ 6. Calibrate the microphone
-    current_noise_floor = calibrate_mic(duration=1.0)    
+    # 6️⃣ MIC CALIBRATION
+    current_noise_floor = calibrate_mic(duration=1.0)
+
+    # 7️⃣ NOW SPOTIFY (AFTER BT + AUDIO READY)
+    print("🎵 [BOOT] Activating Spotify...")
+    spotify_engine = VolcoSpotifyEngine()
+    spotify_ready = spotify_engine.force_activate_headset()
+
+    if not spotify_ready:
+        print("⚠️ Spotify not ready yet. Will retry in background.")
+
+    print("✅ VOLCO OS BOOT COMPLETE") 
     
     try:
         wake_engine.start()
