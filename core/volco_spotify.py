@@ -20,7 +20,7 @@ class VolcoSpotifyManager:
             "--cache", self.cache_path,
             "--backend", "alsa",
             "--bitrate", "320",
-            "--initial-volume", "75",
+            "--initial-volume", "100",
             "--device-type", "speaker",
             "--enable-volume-normalisation"
         ]
