@@ -2,16 +2,14 @@ import time
 import platform
 import sys
 import threading
-import subprocess # ⚡ Added to manage the Bluetooth audio bridge!
+import subprocess 
 
 # ⚡ 1. ONLY IMPORT THE AUDIO ENGINE FIRST
 from core.audio_io import play_sfx 
 
-# ⚡ 2. PLAY THE BOOT SOUND INSTANTLY!f
+# ⚡ 2. PLAY THE BOOT SOUND INSTANTLY!
 print("\n--- VOLCO OS INITIALIZING ---")
-
 play_sfx("./assets/sounds/boot.wav", async_play=True)
-
 
 # ⚡ 3. NOW LOAD THE HEAVY AI LIBRARIES IN THE BACKGROUND
 from config.config_manager import config
@@ -19,27 +17,26 @@ from core.audio_io import calibrate_mic
 from core.wake_word import WakeWordEngine
 from core.connection import ConnectionManager
 from core.data_pipe import start_data_pipe
+from core.volco_spotify import VolcoSpotifyManager
 from core.bluetooth_pairing import enable_bluetooth_pairing 
 from modes.ai_mode.session import start_ai_session
 from modes.bt_mode.media_control import pause_media, resume_media
-from core.volco_audio_engine import VolcoSpotifyEngine
-from modes.ai_mode import session  # import the session.py flag for button interrupts
+from modes.ai_mode import session  
 
 # ==========================================
 # 🎵 BLUETOOTH BRIDGE MANAGER
 # ==========================================
 def manage_audio_bridge(action="stop"):
-    """Frees up the physical speakers for Vella, then gives them back to Bluetooth."""
-    if action == "stop":
-        # Kill the bridge to unlock the ALSA hardware
-        subprocess.run(["killall", "bluealsa-aplay"], stderr=subprocess.DEVNULL)
-    elif action == "start":
-        # Restart the bridge in the background silently
-        subprocess.Popen(["bluealsa-aplay", "00:00:00:00:00:00"], 
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["killall", "bluealsa-aplay"], stderr=subprocess.DEVNULL)
+    if action == "start":
+        subprocess.Popen(
+            ["bluealsa-aplay", "00:00:00:00:00:00"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
 
 # ==========================================
-# 🔘 HARDWARE BUTTON & POWER MANAGEMENT
+# 🔘 GLOBAL STATE & MANAGERS
 # ==========================================
 IS_WINDOWS = platform.system() == "Windows"
 _button_pressed_event = False
@@ -47,12 +44,19 @@ _button_pressed_event = False
 # Power State Trackers
 volco_sleeping = False  
 _was_held_flag = False  
-conn_manager = None   # ⚡ ADD THIS LINE HERE 
+conn_manager = None   
+
+# ⚡ NEW: Initialize Spotify globally so the hardware buttons can control it!
+# Notice we DO NOT pass a username/password. It uses the cached SSO token.
+spotify = VolcoSpotifyManager()
+
+# ==========================================
+# 🔘 HARDWARE BUTTON INTERRUPTS
+# ==========================================
 if not IS_WINDOWS:
     try:
         from gpiozero import Button #type: ignore
         
-        # We added hold_time=3.0 to track the 3-second sleep command
         volco_button = Button(17, bounce_time=0.1, hold_time=3.0)
         
         def button_held():
@@ -64,15 +68,15 @@ if not IS_WINDOWS:
                 print("\n🌙 [POWER] 3-Second Hold Detected! Entering Deep Sleep...")
                 volco_sleeping = True
                 threading.Thread(target=play_sfx, args=("./assets/sounds/shutdown.wav",)).start()
+
+                # ⚡ 1. Kill the Spotify Standalone Client
+                spotify.stop_client()
                 
+                # 2. Kill Bluetooth & Audio Bridge
                 manage_audio_bridge("stop")
-                # ⚡ PHYSICAL HARDWARE SHUTDOWN: Turn off the Bluetooth radio completely
                 subprocess.run(["bluetoothctl", "power", "off"], stdout=subprocess.DEVNULL)
 
-                # ⚡ NEW: Kill the Raspotify background service to stop the music!
-                print("🛑 [POWER] Shutting down Raspotify...")
-                subprocess.run(["sudo", "systemctl", "stop", "raspotify"], stderr=subprocess.DEVNULL)
-
+                
         def button_released():
             """Fires when you let go of the button."""
             global _was_held_flag, volco_sleeping, _button_pressed_event
@@ -85,53 +89,24 @@ if not IS_WINDOWS:
                 print("\n☀️ [POWER] Waking up Volco!")
                 volco_sleeping = False
                 threading.Thread(target=play_sfx, args=("./assets/sounds/boot.wav",)).start()
-                time.sleep(2) # Let the sound play before re-enabling Bluetooth
+                time.sleep(2) 
                 
-                # ⚡ HARDWARE BOOT: Turn the radio back on
+                # 1. Turn the radio back on
                 subprocess.run(["bluetoothctl", "power", "on"], stdout=subprocess.DEVNULL)
                 threading.Thread(target=play_sfx, args=("./assets/sounds/bt_pairing.wav",)).start()
-                time.sleep(1.2) # Let the Bluetooth hardware initialize before trying to connect
                 
-                # ⚡ NEW: Boot the Raspotify service back up!
-                print("🎵 [POWER] Starting Raspotify...")
-                subprocess.run(["sudo", "systemctl", "start", "raspotify"], stderr=subprocess.DEVNULL)
+                # ⚡ 2. Boot the Spotify engine back up! (It auto-connects to the cache)
+                print("🎵 [POWER] Starting Standalone Spotify Client...")
+                spotify.start_client()
 
-                # ⚡ NEW: The Aggressive Reconnect Hunter
-                def aggressive_reconnect():
-                    global conn_manager  # ⚡ ADD THIS LINE
-                    time.sleep(1.5) # 1. Let the physical antenna boot
-                    
-                    paired_out = subprocess.run(["bluetoothctl", "devices"], capture_output=True, text=True).stdout
-                    
-                    for line in paired_out.strip().split('\n'):
-                        if line.startswith("Device"):
-                            mac = line.split()[1]
-                            print(f"🔄 [BT] Aggressively pulling connection from MAC: {mac}")
-                            subprocess.run(["bluetoothctl", "connect", mac], stdout=subprocess.DEVNULL)
-                            
-                    # 2. Start the music bridge
-                    manage_audio_bridge("start")
-                    
-                    print("🔌 Re-establishing Vella Server & App Data Pipe...")
-                    if conn_manager is not None:  # ⚡ Safety check
-                        try:
-                            start_data_pipe(conn_manager) 
-                        except Exception:
-                            pass 
-                            
-                        conn_manager.connect() 
-                        print("✅ Volco fully restored and online.")
-
-                # Fire the hunter in the background
-                threading.Thread(target=aggressive_reconnect, daemon=True).start()
+                # ... (Keep your aggressive_reconnect code here, it's perfect) ...
                 
             else:
                 print("\n🚨 [HARDWARE INTERRUPT] Single click! Triggering AI...")
-                session.button_pressed_flag.set()  # ✅ Set the Event flag for the session to detect
+                session.button_pressed_flag.set()  
                 threading.Thread(target=pause_media, daemon=True).start()
                 manage_audio_bridge("stop")
 
-        # Bind the hardware interrupts
         volco_button.when_held = button_held
         volco_button.when_released = button_released
         print("🔘 [HARDWARE] Smart Button (Click/Hold) initialized on GPIO 17!")
@@ -139,8 +114,8 @@ if not IS_WINDOWS:
     except ImportError:
         print("⚠️ [HARDWARE] gpiozero not found! Button disabled.")
         
+
 def check_for_button():
-    """Checks if a single click happened while awake."""
     global _button_pressed_event
     if _button_pressed_event:
         _button_pressed_event = False 
@@ -152,39 +127,30 @@ def check_for_button():
 # =============================
 def main():
     global conn_manager
+    # Note: 'spotify' is already global, no need to declare it here
 
     print("\n--- VOLCO OS CORE BOOT ---")
 
-    # 1️⃣ CONNECTION MANAGER FIRST (lightweight)
     conn_manager = ConnectionManager()
-
-    # 2️⃣ BLUETOOTH FIRST (your requirement)
+    
     print("🔵 [BOOT] Initializing Bluetooth stack...")
     enable_bluetooth_pairing()
     manage_audio_bridge("start")
 
-    # 3️⃣ DATA PIPE (depends on BT sometimes)
     start_data_pipe(conn_manager)
 
-    # 4️⃣ NOW LOAD AI SYSTEMS
     print("🧠 [BOOT] Initializing AI systems...")
     wake_engine = WakeWordEngine()
-
-    # 5️⃣ NETWORK CONNECTION
     conn_manager.connect()
-
-    # 6️⃣ MIC CALIBRATION
     current_noise_floor = calibrate_mic(duration=1.0)
 
-    # 7️⃣ NOW SPOTIFY (AFTER BT + AUDIO READY)
-    print("🎵 [BOOT] Activating Spotify...")
-    spotify_engine = VolcoSpotifyEngine()
-    spotify_ready = spotify_engine.force_activate_headset()
-
-    if not spotify_ready:
-        print("⚠️ Spotify not ready yet. Will retry in background.")
+    # ⚡ BOOT SPOTIFY AT STARTUP
+    print("🎵 [BOOT] Activating Spotify Standalone Client...")
+    spotify.start_client()
 
     print("✅ VOLCO OS BOOT COMPLETE") 
+    
+    # ... (Keep the rest of your while True loop exactly as you have it!) ...
     
     try:
         wake_engine.start()
