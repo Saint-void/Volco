@@ -22,8 +22,7 @@ class VolcoSpotifyManager:
             "--bitrate", "320",
             "--initial-volume", "75",
             "--device-type", "speaker",
-            "--enable-volume-normalisation",
-            "--zeroconf-port", "0"
+            "--enable-volume-normalisation"
         ]
 
         # Launch the standalone client
