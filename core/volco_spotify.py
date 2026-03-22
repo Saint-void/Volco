@@ -22,11 +22,10 @@ class VolcoSpotifyManager:
             "--bitrate", "320",
             "--initial-volume", "75",
             # ⚡ Notice there is NO username or password here!
-            "--disable-discovery"  # Lock the doors. No other phones can see it.
         ]
 
         # Launch the standalone client
-        self.process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.process = subprocess.Popen(cmd)
         print("✅ [SPOTIFY] Volco is Online and Logged In!")
 
     def stop_client(self):
