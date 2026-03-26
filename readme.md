@@ -1,127 +1,205 @@
 
 ---
 
-# 🎙️ Volco V1.5: Hybrid Smart Assistant
+# Volco
 
-**Volco** has evolved into a fully functional, hybrid-activation AI thin-client. It now features **Dual-Trigger Activation** (Wake Word + Push-to-Talk) and a complete **STT ➔ LLM ➔ TTS** pipeline powered by the Vella Server.
+Volco is your personal AI assistant + music companion built to run on a Raspberry Pi. It listens for wake words, handles AI sessions, integrates with Spotify, and supports Bluetooth data piping from your phone.
 
-> **Status:** V1.5 Hybrid Pipeline Verified ✅
-> **Goal:** High-speed, natural interaction with zero intelligence handled locally.
-
----
-
-## 🧠 The Architecture: The AI Nervous System
-
-Volco now operates as a real-time conversational interface with "Hybrid Ears." It actively listens for a keyword OR a manual trigger.
-
-* **Volco (Client):**
-* **Hybrid Wake System:** Runs `Porcupine` (Wake Word) and `Keyboard` listeners in parallel.
-* **Smart VAD:** Uses RMS energy detection to auto-stop recording when you finish your sentence.
-* **Debounced State Machine:** Prevents accidental dual-triggers.
-
-
-* **Vella (Server):**
-* **Ear (Whisper):** Transcribes audio to text (`faster-whisper`).
-* **Brain (DistilGPT-2):** Generates contextual responses.
-* **Voice (Piper TTS):** Synthesizes natural-sounding speech.
-
-
+This README covers installation, setup, dependencies, and operation details.
 
 ---
 
-## 🛠️ Updated Pipeline Flow
+## 🖥 System Requirements
 
-```mermaid
-graph TD
-    A[Idle State] --> B{Trigger Check}
-    B -- "Wake Word: Computer" --> C[Pause Wake Engine]
-    B -- "Key Press: R-Shift" --> C
-    C --> D[Record Audio: Smart VAD]
-    D -- Silence Detected --> E[Volco: POST wav to Vella]
-    E --> F[Vella: Whisper STT]
-    F --> G[Vella: DistilGPT-2 LLM]
-    G --> H[Vella: Piper TTS]
-    H --> I[Volco: Play Response]
-    I --> A[Resume Wake Engine]
+* Raspberry Pi 4 (recommended) or Pi 3+
+* Raspbian / Raspberry Pi OS (64-bit preferred)
+* Python 3.10+
+* At least 8 GB SD card (for caching audio & Spotify)
+* USB mic or onboard mic support
+* Bluetooth-enabled Pi if using the data pipe
 
+---
+
+## 📦 Project Structure
+
+```text
+VOLCO/
+├── assets/
+│   ├── models/       # ML / AI models
+│   └── sounds/       # Notification & session sounds
+├── config/
+│   ├── config_manager.py   # Config loader
+│   ├── config_notes.txt
+│   └── settings.json       # Main config file
+├── core/
+│   ├── audio_io.py
+│   ├── ble_server.py
+│   ├── connection.py
+│   ├── current_user.txt    # Stores the active user ID
+│   ├── data_pipe.py        # Bluetooth serial pipe
+│   ├── volco_audio_engine.py
+│   ├── volco_spotify.py
+│   └── wake_word.py
+├── modes/
+│   ├── ai_mode/
+│   │   └── session.py
+│   └── bt_mode/
+│       └── __init__.py
+├── app_listener.py
+├── main.py                 # Entry point
+├── requirements.txt
+├── readme.md
+└── .gitignore
 ```
 
-VOLCO/
-│
-├── main.py                 # THE DISPATCHER: Listen for Wake Word / Buttons
-├── test_audio.py           # Hardware debugger
-│
-├── config/                 # Shared settings (server URLs, API keys, etc.)
-│   ├── settings.json       
-│   └── config_manager.py   
-│
-├── core/                   # SHARED HARDWARE DRIVERS
-│   ├── audio_io.py         # Shared Mic/Speaker control
-│   ├── connection.py       # Brain (Server) communication
-│   └── wake_word.py        # Constant wake word listener
-│
-├── modes/                  # ⚡ THE TWO PERSONALITIES
-│   │
-│   ├── ai_mode/            # THE SMART BRAIN
-│   │   ├── session.py      # Logic for Vella conversation (the current logic)
-│   │   └── action_handler.py # Handles specific AI triggers (Spotify, Calls)
-│   │
-│   └── bt_mode/            # THE DUMB HEADPHONE
-│       ├── media_sink.py   # Handles incoming Bluetooth audio from phone
-│       └── avrcp_control.py # Handles Play/Pause/Skip commands
-│
-└── assets/                 # Shared UI Sounds and Models
-    ├── models/             
-    └── sounds/
-
-
 ---
 
-## 📂 Project Structure
+## ⚙ Installation
 
-| File | Responsibility |
-| --- | --- |
-| `volco_hybrid.py` | **The Body:** Handles Wake Word (Porcupine), Push-to-Talk, and Audio I/O. |
-| `main.py` | **The Brain:** FastAPI server managing the AI pipeline (`/volco_process`). |
-| `vector_store.py` | **The Memory:** Handles embedding and retrieval for context. |
-| `chat_agent.py` | **The Logic:** Interface for the local LLM (DistilGPT-2). |
-| `assets/` | Audio cues (`ding.wav`) for wake-word feedback. |
-
----
-
-## 🚀 Key Features in V1.5
-
-### 1. Hybrid Activation (New!)
-
-Volco is now hands-free *and* hands-on.
-
-* **Wake Word:** Say **"Computer"** to activate instantly (powered by `pvporcupine`).
-* **Push-to-Talk:** Hold **Right Shift** for noisy environments or discrete commands.
-
-### 2. "Response-Only" Synthesis
-
-The pipeline is optimized to prevent "Echoing." The server strips the prompt instructions and only sends the AI's actual answer back to the client, saving bandwidth and improving naturalism.
-
-### 3. Modular Local Hosting
-
-Everything runs offline on the V: drive.
-
-* **Whisper:** `faster-whisper-small` for near-instant transcription.
-* **LLM:** `distilgpt2` for low-latency text generation.
-* **TTS:** `Piper` (Low Quality) or `Coqui` (High Quality) for synthesis.
-
-**To activate backend:**
+1. **Update system packages**
 
 ```bash
-uvicorn vella_server:app --reload --host 0.0.0.0 --port 8000
-
+sudo apt update && sudo apt upgrade -y
 ```
+
+2. **Install Python & dev tools**
+
+```bash
+sudo apt install -y python3 python3-pip python3-venv build-essential libasound2-dev portaudio19-dev
+```
+
+3. **Create a virtual environment**
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+4. **Install Python dependencies**
+
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+5. **Bluetooth setup (optional for data pipe)**
+
+```bash
+sudo apt install -y bluetooth bluez python3-serial
+sudo systemctl enable bluetooth
+sudo systemctl start bluetooth
+```
+
+6. **Optional: Install `librespot` for Spotify playback**
+
+```bash
+sudo apt install -y librespot
+```
+
+* Ensure your cached Spotify tokens are in `~/.cache/volco_spotify`.
 
 ---
 
-## 🗺️ The Roadmap to V2
+## 🔑 Configuration
 
-* [ ] **Contextual Memory:** Fully integrate Vector Store (ChromaDB) so Volco remembers previous turns.
-* [ ] **Interruptibility:** Allow the user to "barge in" and stop the AI from talking.
-* [ ] **Hardware Integration:** Migration to Raspberry Pi Zero 2W with a custom HAT.
-* [ ] **Brain Upgrade:** Swap DistilGPT-2 for **TinyLlama-Chat** or **Phi-2** for more intelligent conversation.
+1. Copy `config/settings.json.example` → `config/settings.json` and edit values:
+
+   * Audio chunk size, rate, channels
+   * Thresholds for wake word and noise
+   * Output device index for playback
+2. Add your Spotify `CLIENT_ID` and `CLIENT_SECRET` in `core/volco_spotify.py`.
+3. Update Picovoice wake word credentials in `config/settings.json`.
+
+---
+
+## 🎵 Spotify Integration
+
+* Uses official Spotify API to search/play tracks, albums, and playlists.
+* Controls: `next`, `previous`, `pause`, `resume`.
+* Standalone playback via `librespot` or OS audio output.
+* Discovery of Volco device is automatic on startup.
+
+---
+
+## 🎤 Wake Word & AI Session
+
+* Uses **Picovoice Porcupine** for hotword detection.
+
+* When wake word detected:
+
+  * Starts AI listening session
+  * Captures speech above adaptive threshold
+  * Sends audio to AI engine (`ai_mode/session.py`)
+  * Volco can respond with audio or trigger Spotify commands
+
+* Push-to-talk button is fallback for Pi setups without working Porcupine engine.
+
+---
+
+## 📡 Bluetooth Data Pipe
+
+* Runs in the background using `/dev/rfcomm0`.
+* Connects your phone via Bluetooth and receives user data:
+
+  * Example: `DB_ID:<user_id>` → automatically stores in `current_user.txt`
+* Handles serial errors gracefully and waits for the next connection.
+
+---
+
+## 🚀 Running Volco
+
+1. Activate virtual environment
+
+```bash
+source venv/bin/activate
+```
+
+2. Run main app
+
+```bash
+python main.py
+```
+
+* The system auto-initializes:
+
+  * Wake word engine
+  * Spotify manager
+  * Data pipe listener
+* LED / terminal logs show status for audio, AI sessions, and Spotify commands.
+
+---
+
+## 🧩 Developer Notes
+
+* AI sessions are handled in `modes/ai_mode/session.py`
+* Spotify playback engine is `core/volco_spotify.py`
+* Wake word engine is `core/wake_word.py`
+* Bluetooth serial pipe is `core/data_pipe.py`
+* Audio I/O & meters are in `core/audio_io.py`
+
+---
+
+## ⚠️ Troubleshooting
+
+* **Mic not detected:** check `arecord -l` and adjust channels in `settings.json`.
+* **Spotify playback fails:** ensure `librespot` is installed and Spotify token is valid.
+* **Wake word fails:** Picovoice requires valid access key and keyword path.
+* **Bluetooth issues:** make sure `rfcomm` is free, or run `sudo rfcomm release /dev/rfcomm0`.
+
+---
+
+## 📝 Logging & Debugging
+
+* Console prints show AI session status, Spotify commands, and Bluetooth messages.
+* Look for `✅` and `⚠️` markers for success/warning messages.
+
+---
+
+## 🛠 Contributing
+
+* All changes should be tested on a Pi before merge
+* Maintain consistent logging and emoji-based markers for readability
+* Keep Spotify keys and tokens secure, never commit them to git
+
+---
+
