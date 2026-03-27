@@ -38,6 +38,15 @@ def is_button_pressed():
 
 def start_ai_session(wake_engine, conn_manager, noise_floor):
     """Handles the active listening and speaking phase for Vella AI."""
+    
+    # ⚡ THE FIX: Instantly pause Spotify so it doesn't talk over you
+    print("\n⏸️ Wake word detected! Pausing background music...")
+    try:
+        # We fire the pause command in the background so it doesn't delay the mic turning on
+        threading.Thread(target=spotify.control_playback, args=("pause",), daemon=True).start()
+    except Exception as e:
+        pass # Ignore if nothing is playing
+
     p = pyaudio.PyAudio()
     
     chunk = config["audio"]["chunk"]
@@ -46,6 +55,8 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
     dynamic_threshold = noise_floor + config["audio"]["safety_margin"]
     
     print(f"\n🧠 [AI MODE] Adaptive Threshold set to: {dynamic_threshold}")
+    
+    # ... the rest of your try/while block remains the same ...
 
     try:
         while conn_manager.is_connected():
