@@ -12,6 +12,7 @@ from core.volco_audio_engine import VolcoSpotifyEngine
 from config.config_manager import config
 from core.audio_io import play_sfx, print_audio_meter
 import string
+import subprocess
 
 # Initialize the engine once
 spotify = VolcoSpotifyEngine()
@@ -39,16 +40,25 @@ def is_button_pressed():
 def start_ai_session(wake_engine, conn_manager, noise_floor):
     """Handles the active listening and speaking phase for Vella AI."""
     
-    # ⚡ THE FIX: Instantly pause Spotify so it doesn't talk over you
-    print("\n⏸️ Wake word detected! Pausing background music...")
+    # ⚡ 1. INSTANT HARDWARE MUTE: Cut the speakers immediately at the OS level
+    print("\n🔇 Wake word detected! Cutting speakers instantly...")
     try:
-        # We fire the pause command in the background so it doesn't delay the mic turning on
+        # This mutes the primary audio channels on Linux/ALSA instantly
+        subprocess.run(["amixer", "-q", "sset", "Master", "mute"], check=False)
+        subprocess.run(["amixer", "-q", "sset", "PCM", "mute"], check=False)
+    except Exception:
+        pass
+
+    # ⚡ 2. BACKGROUND API PAUSE: Tell Spotify to stop on the server side
+    try:
         threading.Thread(target=spotify.control_playback, args=("pause",), daemon=True).start()
     except Exception as e:
-        pass # Ignore if nothing is playing
+        pass 
 
     p = pyaudio.PyAudio()
-    time.sleep(2)  # Brief pause to ensure the mic is ready before we start processing audio
+    
+    # ❌ REMOVED: time.sleep(2) - We want lightning-fast response!
+    
     chunk = config["audio"]["chunk"]
     rate = config["audio"]["rate"]
     channels = config["audio"]["channels"]  
@@ -115,8 +125,14 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 print("🚀 Sending COMMIT...")
                 if not conn_manager.send_data("COMMIT"): return
 
-                # ⚡ UPDATE: Corrected Terminal Log
                 print("🧠 Vella is processing... (Waiting for response)")
+
+                # ⚡ 3. UNMUTE SPEAKERS: Spotify is officially paused now, safe to turn volume back on
+                try:
+                    subprocess.run(["amixer", "-q", "sset", "Master", "unmute"], check=False)
+                    subprocess.run(["amixer", "-q", "sset", "PCM", "unmute"], check=False)
+                except Exception:
+                    pass
 
                 # ⚡ THE INSTANT-KILL AUDIO LOOPER
                 thinking_event = threading.Event()
