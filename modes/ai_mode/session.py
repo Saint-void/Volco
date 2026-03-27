@@ -48,7 +48,7 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
         pass # Ignore if nothing is playing
 
     p = pyaudio.PyAudio()
-    
+    time.sleep(2)  # Brief pause to ensure the mic is ready before we start processing audio
     chunk = config["audio"]["chunk"]
     rate = config["audio"]["rate"]
     channels = config["audio"]["channels"]  
@@ -56,7 +56,6 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
     
     print(f"\n🧠 [AI MODE] Adaptive Threshold set to: {dynamic_threshold}")
     
-    # ... the rest of your try/while block remains the same ...
 
     try:
         while conn_manager.is_connected():
