@@ -1,4 +1,5 @@
 import json
+import wave
 import time
 import struct
 import pyaudio
@@ -104,7 +105,41 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 print("🚀 Sending COMMIT...")
                 if not conn_manager.send_data("COMMIT"): return
 
-                print("🤖 Volco Speaking... (Press Button to Interrupt)")
+                # ⚡ UPDATE: Corrected Terminal Log
+                print("🧠 Vella is processing... (Waiting for response)")
+
+                # ⚡ THE INSTANT-KILL AUDIO LOOPER
+                thinking_event = threading.Event()
+                thinking_event.set()
+
+                def loading_sound_worker():
+                    import wave
+                    try:
+                        wf = wave.open("./assets/sounds/ai_respond_loading.wav", 'rb')
+                        # Open a dedicated stream just for the loading sound
+                        load_stream = p.open(format=p.get_format_from_width(wf.getsampwidth()),
+                                             channels=wf.getnchannels(),
+                                             rate=wf.getframerate(),
+                                             output=True)
+                        chunk_size = 1024
+                        audio_data = wf.readframes(chunk_size)
+                        
+                        # Loop in tiny chunks so we can instantly abort
+                        while thinking_event.is_set():
+                            if len(audio_data) == 0:
+                                wf.rewind() # Loop back to the beginning of the file
+                                audio_data = wf.readframes(chunk_size)
+                            load_stream.write(audio_data)
+                            audio_data = wf.readframes(chunk_size)
+                            
+                        load_stream.stop_stream()
+                        load_stream.close()
+                    except Exception as e:
+                        pass # Failsafe if file is missing
+
+                # Start the loading sound in the background
+                loading_thread = threading.Thread(target=loading_sound_worker, daemon=True)
+                loading_thread.start()
 
                 wake_engine.start()
                 stop_event = threading.Event()
@@ -112,12 +147,12 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 # ⚡ BUTTON INTERRUPT WATCHER
                 def watch_for_interrupt():
                     while not stop_event.is_set():
-                        if button_pressed_flag.is_set():  # ✅ use the proper Event object
+                        if button_pressed_flag.is_set():  
                             print("\n🛑 INTERRUPT (button)!")
                             conn_manager.send_data("INTERRUPT")
                             stop_event.set()
-                            button_pressed_flag.clear()  # reset for next session
-                        time.sleep(0.05)  # Polling interval
+                            button_pressed_flag.clear() 
+                        time.sleep(0.05) 
 
                 t = threading.Thread(target=watch_for_interrupt, daemon=True)
                 t.start()
@@ -129,13 +164,20 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                                         output=True)
 
                 voice_stream_active = True
-                should_exit_to_wake_mode = False  # ⚡ THE KILL SWITCH
+                should_exit_to_wake_mode = False  
+                first_response_received = False  # ⚡ Tracks when Vella actually replies
 
                 while True:
                     if stop_event.is_set(): break
                     try:
                         opcode, data = conn_manager.recv_data()
                         if stop_event.is_set(): break
+
+                        # ⚡ THE MOMENT VELLA REPLIES: Kill the sound & update the console
+                        if not first_response_received:
+                            first_response_received = True
+                            thinking_event.clear() # This instantly stops the loading loop
+                            print("🤖 Volco Speaking... (Press Button to Interrupt)")
 
                         if opcode == 2:  # Audio
                             if voice_stream_active:
@@ -150,30 +192,30 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                                     if payload.get("action"):
                                         should_exit_to_wake_mode = True
 
-                                        if voice_stream_active:
-                                            speaker_stream.stop_stream()
-                                            speaker_stream.close()
-                                            voice_stream_active = False
-                                            print("🔇 Released ALSA for Spotify.")
+                                    if voice_stream_active:
+                                        speaker_stream.stop_stream()
+                                        speaker_stream.close()
+                                        voice_stream_active = False
+                                        print("🔇 Released ALSA for Spotify.")
 
-                                        # Execute Spotify action
-                                        query = payload.get("query", "").rstrip(".!?,")
-                                        action = payload.get("action")
-                                        if action == "spotify_play_track":
-                                            spotify.search_and_play(query, "track")
-                                        elif action == "spotify_next":
-                                            spotify.control_playback("next")
-                                        elif action == "spotify_previous":
-                                            spotify.control_playback("previous")
-                                        elif action == "spotify_pause":
-                                            spotify.control_playback("pause")
-                                        elif action == "spotify_resume":
-                                            spotify.control_playback("resume")
-                                        elif action == "spotify_play_album":
-                                            spotify.search_and_play(query, "album")
-                                        elif action == "spotify_play_playlist":
-                                            spotify.search_and_play(query, "playlist")
-                                        continue
+                                    # Execute Spotify action
+                                    query = payload.get("query", "").rstrip(".!?,")
+                                    action = payload.get("action")
+                                    if action == "spotify_play_track":
+                                        spotify.search_and_play(query, "track")
+                                    elif action == "spotify_next":
+                                        spotify.control_playback("next")
+                                    elif action == "spotify_previous":
+                                        spotify.control_playback("previous")
+                                    elif action == "spotify_pause":
+                                        spotify.control_playback("pause")
+                                    elif action == "spotify_resume":
+                                        spotify.control_playback("resume")
+                                    elif action == "spotify_play_album":
+                                        spotify.search_and_play(query, "album")
+                                    elif action == "spotify_play_playlist":
+                                        spotify.search_and_play(query, "playlist")
+                                    continue
                                 except: pass
 
                             if msg == "END_OF_RESPONSE" or msg == "NO_SPEECH":
@@ -185,6 +227,7 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
 
                 # Cleanup
                 stop_event.set()
+                thinking_event.clear() # Failsafe to ensure sound loop dies
                 t.join()
                 wake_engine.stop()
                 if voice_stream_active:
