@@ -20,8 +20,7 @@ def start_hotspot_and_portal():
     print("📡 No internet detected. Initiating Volco Setup Hotspot...")
     
     # 1. Start the NetworkManager Hotspot (Open network, no password so the portal pops up easily)
-    subprocess.run(["nmcli", "dev", "wifi", "hotspot", "ifname", "wlan0", "ssid", "Volco Setup"], check=False)
-    
+    subprocess.run(["sudo", "nmcli", "dev", "wifi", "hotspot", "ifname", "wlan0", "ssid", "Volco Setup"], check=False)    
     # 2. Restart dnsmasq to ensure the DNS trap is active
     subprocess.run(["sudo", "systemctl", "restart", "dnsmasq"], check=False)
     
