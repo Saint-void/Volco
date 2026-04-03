@@ -51,6 +51,33 @@ conn_manager = None
 spotify = VolcoSpotifyManager()
 
 # ==========================================
+# 🔊 AUDIO DUCKING MANAGER
+# ==========================================
+last_vol = "80%" # Default fallback
+
+def duck_audio():
+    global last_vol
+    try:
+        # 1. Grab current volume (e.g., extracts '80%' from the amixer output)
+        output = subprocess.check_output("amixer get Master | grep -Po '\[\d+%\]' | head -1", shell=True).decode()
+        last_vol = output.strip("[]\n ")
+        
+        # 2. Drop it to 15% (Adjust this number if it's too quiet or too loud)
+        subprocess.run(["amixer", "set", "Master", "15%"], stdout=subprocess.DEVNULL)
+        print(f"🔉 Ducking music: {last_vol} -> 15%")
+    except Exception as e:
+        print(f"⚠️ Ducking failed: {e}")
+
+def restore_audio():
+    global last_vol
+    try:
+        # Restore to whatever it was before the AI interrupted
+        subprocess.run(["amixer", "set", "Master", last_vol], stdout=subprocess.DEVNULL)
+        print(f"🔊 Restoring music: {last_vol}")
+    except Exception as e:
+        print(f"⚠️ Restore failed: {e}")
+
+# ==========================================
 # 🔘 HARDWARE BUTTON INTERRUPTS
 # ==========================================
 if not IS_WINDOWS:
@@ -150,8 +177,6 @@ def main():
 
     print("✅ VOLCO OS BOOT COMPLETE") 
     
-    # ... (Keep the rest of your while True loop exactly as you have it!) ...
-    
     try:
         wake_engine.start()
         
@@ -191,6 +216,15 @@ def main():
             if is_wake_word or button_triggered:
                 trigger_type = "BUTTON" if button_triggered else "VOICE"
                 print(f"\n⚡ WAKE TRIGGERED ({trigger_type})!")
+
+                # --- NEW: DUCK THE VOLUME FIRST ---
+                duck_audio() 
+                
+                manage_audio_bridge("stop")
+                threading.Thread(target=pause_media, daemon=True).start()
+                
+                wake_engine.stop() 
+                time.sleep(0.5)
                 
                 # Double-tap the locks just to be safe if triggered by voice
                 manage_audio_bridge("stop")
@@ -216,6 +250,8 @@ def main():
                 
                 try:
                     # 1️⃣ --- THE WAKE SOUND ---
+                    # (This will now play at the ducked volume, which is fine, 
+                    # or you can set amixer to 100% just for the sfx)
                     play_sfx(config["audio"]["sfx_wake"])
 
                     # 2️⃣ --- THE AI TAKEOVER ---
@@ -223,22 +259,24 @@ def main():
                     
                     # 3️⃣ --- THE BLUETOOTH RESUME ---
                     print("✅ Session ended. Resuming media...")
-                    manage_audio_bridge("start") # Give speakers back to Bluetooth
-                    time.sleep(1) # Let the bridge initialize
+                    
+                    # --- NEW: RESTORE THE VOLUME HERE ---
+                    restore_audio() 
+                    
+                    manage_audio_bridge("start") 
+                    time.sleep(1) 
                     threading.Thread(target=resume_media, daemon=True).start()
                     
-                    # Reset OS back to idle
                     wake_engine.start()
                     time.sleep(0.5)   
                     print("\n✅ VOLCO OS READY | Waiting for wake word or button...")
                     
                 except Exception as e:
-                    print(f"⚠️ Connection lost during session. Resetting...")
+                    print(f"⚠️ Error during session: {e}")
+                    restore_audio() # Ensure volume comes back even on error
                     conn_manager.close()
-                    time.sleep(1)
-                    manage_audio_bridge("start") # Give music back
                     wake_engine.start()
-
+                    
     except KeyboardInterrupt:
         print("\n👋 Shutting down Volco OS...")
         manage_audio_bridge("stop")
