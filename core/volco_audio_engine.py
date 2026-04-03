@@ -78,21 +78,61 @@ class VolcoSpotifyEngine:
         finally:
             zc.close()
 
+        
+
     # --- THE COMMANDS ---
 
     def play_resume(self):
-        """Resumes current playback."""
+        """Resumes current playback specifically on Volco."""
         headers = self._get_headers()
         if not headers: return
-        requests.put(f"{self.base_url}/me/player/play", headers=headers)
-        print("▶️ Playing/Resuming music")
+        
+        device_id = self.get_volco_device_id(headers)
+        device_query = f"?device_id={device_id}" if device_id else ""
+        
+        res = requests.put(f"{self.base_url}/me/player/play{device_query}", headers=headers)
+        if res.status_code in [200, 202, 204]:
+            print("▶️ Playing/Resuming music")
+        else:
+            print(f"❌ Resume failed: {res.status_code}")
 
     def pause(self):
-        """Pauses current playback."""
+        """Pauses current playback specifically on Volco."""
         headers = self._get_headers()
         if not headers: return
-        requests.put(f"{self.base_url}/me/player/pause", headers=headers)
-        print("⏸️ Paused music")
+        
+        device_id = self.get_volco_device_id(headers)
+        device_query = f"?device_id={device_id}" if device_id else ""
+        
+        res = requests.put(f"{self.base_url}/me/player/pause{device_query}", headers=headers)
+        if res.status_code in [200, 202, 204]:
+            print("⏸️ Paused music")
+        else:
+            print(f"❌ Pause failed: {res.status_code}")
+
+    def set_volume(self, volume_percent):
+        """Sets the volume (0-100) specifically on Volco."""
+        headers = self._get_headers()
+        if not headers: 
+            return
+        
+        # Target the Volco device specifically so we don't accidentally 
+        # change the volume on your phone or TV.
+        device_id = self.get_volco_device_id(headers)
+        
+        # Spotify Volume API uses a query parameter: ?volume_percent=X
+        url = f"{self.base_url}/me/player/volume?volume_percent={volume_percent}"
+        if device_id:
+            url += f"&device_id={device_id}"
+        
+        try:
+            res = requests.put(url, headers=headers)
+            if res.status_code in [200, 202, 204]:
+                print(f"🔊 Volume set to {volume_percent}%")
+            else:
+                print(f"❌ Volume change failed: {res.status_code}")
+        except Exception as e:
+            print(f"⚠️ Volume error: {e}")
 
     def next_track(self):
         """Skips to the next song."""
@@ -268,3 +308,6 @@ class VolcoSpotifyEngine:
             print("✅ Playback started on Volco!")
         else:
             print(f"❌ Playback failed: {play_res.status_code} {play_res.text}")
+
+
+        

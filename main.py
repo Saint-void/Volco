@@ -21,7 +21,18 @@ from core.volco_spotify import VolcoSpotifyManager
 from core.bluetooth_pairing import enable_bluetooth_pairing 
 from modes.ai_mode.session import start_ai_session
 from modes.bt_mode.media_control import pause_media, resume_media
-from modes.ai_mode import session  
+from modes.ai_mode import session
+from core.volco_audio_engine import VolcoSpotifyEngine
+
+# ==========================================
+# 🎵 SPOTIFY MANAGERS
+# ==========================================
+# Initialize them globally so everything can reach them
+spotify_hw = VolcoSpotifyManager() # Controls librespot (hardware)
+spotify_api = VolcoSpotifyEngine() # Controls volume/play/pause (API)
+
+# Start the background librespot daemon
+spotify_hw.start_client()
 
 # ==========================================
 # 🎵 BLUETOOTH BRIDGE MANAGER
@@ -46,37 +57,6 @@ volco_sleeping = False
 _was_held_flag = False  
 conn_manager = None   
 
-# ⚡ NEW: Initialize Spotify globally so the hardware buttons can control it!
-# Notice we DO NOT pass a username/password. It uses the cached SSO token.
-spotify = VolcoSpotifyManager()
-
-# ==========================================
-# 🔊 AUDIO DUCKING MANAGER
-# ==========================================
-last_vol = "80%" # Default fallback
-
-def duck_audio():
-    global last_vol
-    try:
-        # 1. Grab current volume (e.g., extracts '80%' from the amixer output)
-        output = subprocess.check_output("amixer get Master | grep -Po '\[\d+%\]' | head -1", shell=True).decode()
-        last_vol = output.strip("[]\n ")
-        
-        # 2. Drop it to 15% (Adjust this number if it's too quiet or too loud)
-        subprocess.run(["amixer", "set", "Master", "15%"], stdout=subprocess.DEVNULL)
-        print(f"🔉 Ducking music: {last_vol} -> 15%")
-    except Exception as e:
-        print(f"⚠️ Ducking failed: {e}")
-
-def restore_audio():
-    global last_vol
-    try:
-        # Restore to whatever it was before the AI interrupted
-        subprocess.run(["amixer", "set", "Master", last_vol], stdout=subprocess.DEVNULL)
-        print(f"🔊 Restoring music: {last_vol}")
-    except Exception as e:
-        print(f"⚠️ Restore failed: {e}")
-
 # ==========================================
 # 🔘 HARDWARE BUTTON INTERRUPTS
 # ==========================================
@@ -97,7 +77,7 @@ if not IS_WINDOWS:
                 threading.Thread(target=play_sfx, args=("./assets/sounds/shutdown.wav",)).start()
 
                 # ⚡ 1. Kill the Spotify Standalone Client
-                spotify.stop_client()
+                spotify_hw.stop_client()
                 
                 # 2. Kill Bluetooth & Audio Bridge
                 manage_audio_bridge("stop")
@@ -124,15 +104,13 @@ if not IS_WINDOWS:
                 
                 # ⚡ 2. Boot the Spotify engine back up! (It auto-connects to the cache)
                 print("🎵 [POWER] Starting Standalone Spotify Client...")
-                spotify.start_client()
-
-                # ... (Keep your aggressive_reconnect code here, it's perfect) ...
+                spotify_hw.start_client()
                 
             else:
                 print("\n🚨 [HARDWARE INTERRUPT] Single click! Triggering AI...")
                 session.button_pressed_flag.set()  
-                threading.Thread(target=pause_media, daemon=True).start()
-                manage_audio_bridge("stop")
+                # ❌ REMOVED manage_audio_bridge("stop") and pause_media here!
+                # The main loop will handle ducking the volume smoothly.
 
         volco_button.when_held = button_held
         volco_button.when_released = button_released
@@ -154,7 +132,6 @@ def check_for_button():
 # =============================
 def main():
     global conn_manager
-    # Note: 'spotify' is already global, no need to declare it here
 
     print("\n--- VOLCO OS CORE BOOT ---")
 
@@ -170,10 +147,6 @@ def main():
     wake_engine = WakeWordEngine()
     conn_manager.connect()
     current_noise_floor = calibrate_mic(duration=1.0)
-
-    # ⚡ BOOT SPOTIFY AT STARTUP
-    print("🎵 [BOOT] Activating Spotify Standalone Client...")
-    spotify.start_client()
 
     print("✅ VOLCO OS BOOT COMPLETE") 
     
@@ -199,7 +172,6 @@ def main():
             if was_sleeping_loop_state:
                 print("⚡ OS resuming background tasks...")
                 wake_engine.start() 
-                # ❌ We removed conn_manager.connect() from here!
                 was_sleeping_loop_state = False
 
             # --- YOUR NORMAL LOOP STARTS HERE ---
@@ -217,22 +189,11 @@ def main():
                 trigger_type = "BUTTON" if button_triggered else "VOICE"
                 print(f"\n⚡ WAKE TRIGGERED ({trigger_type})!")
 
-                # --- NEW: DUCK THE VOLUME FIRST ---
-                duck_audio() 
-                
-                manage_audio_bridge("stop")
-                threading.Thread(target=pause_media, daemon=True).start()
+                # 🔉 DUCK THE AUDIO via API
+                spotify_api.set_volume(15)                
                 
                 wake_engine.stop() 
-                time.sleep(0.5)
-                
-                # Double-tap the locks just to be safe if triggered by voice
-                manage_audio_bridge("stop")
-                threading.Thread(target=pause_media, daemon=True).start()
-                
-                # ⚡ Stop the microphone immediately to prevent ALSA crashes!
-                wake_engine.stop() 
-                time.sleep(0.5) # Let the hardware breathe
+                time.sleep(0.2)
                 
                 # Network Check
                 if conn_manager.is_connected():
@@ -244,28 +205,20 @@ def main():
                     if not conn_manager.connect():
                         print("❌ Failed to reconnect.")
                         play_sfx(config["audio"]["sfx_offline"])
-                        manage_audio_bridge("start") # Give music back
+                        spotify_api.set_volume(93) # ⚡ FIX: Restore volume if offline
                         wake_engine.start() 
                         continue
                 
                 try:
                     # 1️⃣ --- THE WAKE SOUND ---
-                    # (This will now play at the ducked volume, which is fine, 
-                    # or you can set amixer to 100% just for the sfx)
                     play_sfx(config["audio"]["sfx_wake"])
 
                     # 2️⃣ --- THE AI TAKEOVER ---
                     start_ai_session(wake_engine, conn_manager, current_noise_floor)
                     
                     # 3️⃣ --- THE BLUETOOTH RESUME ---
-                    print("✅ Session ended. Resuming media...")
-                    
-                    # --- NEW: RESTORE THE VOLUME HERE ---
-                    restore_audio() 
-                    
-                    manage_audio_bridge("start") 
-                    time.sleep(1) 
-                    threading.Thread(target=resume_media, daemon=True).start()
+                    print("✅ Session ended. Resuming media volume...")
+                    spotify_api.set_volume(93)                    
                     
                     wake_engine.start()
                     time.sleep(0.5)   
@@ -273,7 +226,7 @@ def main():
                     
                 except Exception as e:
                     print(f"⚠️ Error during session: {e}")
-                    restore_audio() # Ensure volume comes back even on error
+                    spotify_api.set_volume(93) # ⚡ FIX: Used API manager, not hardware manager
                     conn_manager.close()
                     wake_engine.start()
                     
