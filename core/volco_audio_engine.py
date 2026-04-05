@@ -133,6 +133,46 @@ class VolcoSpotifyEngine:
                 print(f"❌ Volume change failed: {res.status_code}")
         except Exception as e:
             print(f"⚠️ Volume error: {e}")
+    
+    def fade_volume(self, target_volume, start_volume=93, duration=0.6):
+        """Fades volume smoothly in the background without hitting Spotify API rate limits."""
+        import threading
+        import time
+        import requests
+
+        def _fade():
+            headers = self._get_headers()
+            if not headers: 
+                return
+            device_id = self.get_volco_device_id(headers)
+            
+            # We step the volume in 3 quick chunks to create a smooth illusion
+            steps = 3 
+            step_delay = duration / steps
+            step_size = (target_volume - start_volume) / steps
+            
+            for i in range(1, steps + 1):
+                # Calculate the exact volume for this step
+                current_vol = int(start_volume + (step_size * i))
+                
+                # Safety check to keep it between 0 and 100
+                current_vol = max(0, min(100, current_vol)) 
+                
+                url = f"{self.base_url}/me/player/volume?volume_percent={current_vol}"
+                if device_id:
+                    url += f"&device_id={device_id}"
+                
+                try:
+                    requests.put(url, headers=headers)
+                except Exception:
+                    pass
+                
+                time.sleep(step_delay)
+                
+            print(f"🔊 Smooth fade complete: {target_volume}%")
+
+        # ⚡ Run in a background thread so it doesn't freeze Vella's response time!
+        threading.Thread(target=_fade, daemon=True).start()
 
     def next_track(self):
         """Skips to the next song."""

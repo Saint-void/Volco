@@ -20,7 +20,6 @@ from core.data_pipe import start_data_pipe
 from core.volco_spotify import VolcoSpotifyManager
 from core.bluetooth_pairing import enable_bluetooth_pairing 
 from modes.ai_mode.session import start_ai_session
-from modes.bt_mode.media_control import pause_media, resume_media
 from modes.ai_mode import session
 from core.volco_audio_engine import VolcoSpotifyEngine
 
@@ -190,8 +189,7 @@ def main():
                 print(f"\n⚡ WAKE TRIGGERED ({trigger_type})!")
 
                 # 🔉 DUCK THE AUDIO via API
-                spotify_api.set_volume(15)                
-                
+                spotify_api.fade_volume(target_volume=15, start_volume=93)                
                 wake_engine.stop() 
                 time.sleep(0.2)
                 
@@ -205,7 +203,7 @@ def main():
                     if not conn_manager.connect():
                         print("❌ Failed to reconnect.")
                         play_sfx(config["audio"]["sfx_offline"])
-                        spotify_api.set_volume(93) # ⚡ FIX: Restore volume if offline
+                        spotify_api.fade_volume(target_volume=93, start_volume=15)
                         wake_engine.start() 
                         continue
                 
@@ -218,7 +216,7 @@ def main():
                     
                     # 3️⃣ --- THE BLUETOOTH RESUME ---
                     print("✅ Session ended. Resuming media volume...")
-                    spotify_api.set_volume(93)                    
+                    spotify_api.fade_volume(target_volume=93, start_volume=15)                   
                     
                     wake_engine.start()
                     time.sleep(0.5)   
@@ -226,7 +224,7 @@ def main():
                     
                 except Exception as e:
                     print(f"⚠️ Error during session: {e}")
-                    spotify_api.set_volume(93) # ⚡ FIX: Used API manager, not hardware manager
+                    spotify_api.fade_volume(target_volume=93, start_volume=15)
                     conn_manager.close()
                     wake_engine.start()
                     

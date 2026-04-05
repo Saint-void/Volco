@@ -40,21 +40,6 @@ def is_button_pressed():
 def start_ai_session(wake_engine, conn_manager, noise_floor):
     """Handles the active listening and speaking phase for Vella AI."""
     
-    # ⚡ 1. INSTANT HARDWARE MUTE: Cut the speakers immediately at the OS level
-    print("\n🔇 Wake word detected! Cutting speakers instantly...")
-    try:
-        # This mutes the primary audio channels on Linux/ALSA instantly
-        subprocess.run(["amixer", "-q", "sset", "Master", "mute"], check=False)
-        subprocess.run(["amixer", "-q", "sset", "PCM", "mute"], check=False)
-    except Exception:
-        pass
-
-    # ⚡ 2. BACKGROUND API PAUSE: Tell Spotify to stop on the server side
-    try:
-        threading.Thread(target=spotify.control_playback, args=("pause",), daemon=True).start()
-    except Exception as e:
-        pass 
-
     p = pyaudio.PyAudio()
     
     # ❌ REMOVED: time.sleep(2) - We want lightning-fast response!
