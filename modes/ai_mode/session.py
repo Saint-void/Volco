@@ -112,16 +112,14 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
 
                 print("🧠 Vella is processing... (Waiting for response)")
 
-                # ⚡ 3. UNMUTE SPEAKERS: Spotify is officially paused now, safe to turn volume back on
-                try:
-                    subprocess.run(["amixer", "-q", "sset", "Master", "unmute"], check=False)
-                    subprocess.run(["amixer", "-q", "sset", "PCM", "unmute"], check=False)
-                except Exception:
-                    pass
+                # ⚡ Spotify volume was already ducked to 15% in main.py
+                # No need to explicitly unmute/pause here to allow co-playing.
 
                 # ⚡ THE INSTANT-KILL AUDIO LOOPER
                 thinking_event = threading.Event()
                 thinking_event.set()
+
+                device_id = config["audio"].get("output_device_index") 
 
                 def loading_sound_worker():
                     import wave
@@ -131,7 +129,8 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                         load_stream = p.open(format=p.get_format_from_width(wf.getsampwidth()),
                                              channels=wf.getnchannels(),
                                              rate=wf.getframerate(),
-                                             output=True)
+                                             output=True,
+                                             output_device_index=device_id)
                         chunk_size = 1024
                         audio_data = wf.readframes(chunk_size)
                         
@@ -172,7 +171,8 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 speaker_stream = p.open(format=pyaudio.paInt16, 
                                         channels=2, 
                                         rate=22050, 
-                                        output=True)
+                                        output=True,
+                                        output_device_index=device_id   )
 
                 voice_stream_active = True
                 should_exit_to_wake_mode = False  
