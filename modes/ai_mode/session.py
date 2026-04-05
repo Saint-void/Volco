@@ -129,8 +129,7 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                         load_stream = p.open(format=p.get_format_from_width(wf.getsampwidth()),
                                              channels=wf.getnchannels(),
                                              rate=wf.getframerate(),
-                                             output=True,
-                                             output_device_index=device_id)
+                                             output=True)
                         chunk_size = 1024
                         audio_data = wf.readframes(chunk_size)
                         
@@ -171,8 +170,7 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 speaker_stream = p.open(format=pyaudio.paInt16, 
                                         channels=2, 
                                         rate=22050, 
-                                        output=True,
-                                        output_device_index=device_id   )
+                                        output=True)
 
                 voice_stream_active = True
                 should_exit_to_wake_mode = False  
