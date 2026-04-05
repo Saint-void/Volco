@@ -147,6 +147,10 @@ def main():
     conn_manager.connect()
     current_noise_floor = calibrate_mic(duration=1.0)
 
+    # ⚡ PRE-CACHE SPOTIFY (Reduces first-wake latency)                                    
+    print("🎵 [BOOT] Pre-caching Spotify credentials...")                                  
+    threading.Thread(target=spotify_api._get_access_token, daemon=True).start() 
+
     print("✅ VOLCO OS BOOT COMPLETE") 
     
     try:

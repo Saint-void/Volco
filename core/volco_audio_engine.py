@@ -1,3 +1,4 @@
+import threading
 import time
 import json
 import os
@@ -27,9 +28,16 @@ class VolcoSpotifyEngine:
     def __init__(self):
         self.creds_path = os.path.expanduser("~/volco_spotify_creds.json")
         self.base_url = "https://api.spotify.com/v1"
+        self._access_token = None
+        self._token_expiry = 0
+        self._cached_device_id = None
 
     def _get_access_token(self):
-        """Silently trades the permanent refresh token for a 60-minute access token."""
+        """Silently trades the permanent refresh token for a 60-minute access token with caching."""                
+        # ⚡ Check if we have a valid cached token (with 30s buffer)                                                
+        if self._access_token and time.time() < self._token_expiry - 30:                                            
+            return self._access_token 
+    
         try:
             with open(self.creds_path, "r") as f:
                 data = json.load(f)
@@ -44,9 +52,13 @@ class VolcoSpotifyEngine:
             }
             payload = {"grant_type": "refresh_token", "refresh_token": refresh_token}
             
-            res = requests.post("https://accounts.spotify.com/api/token", headers=headers, data=payload)
+            res = requests.post("https://accounts.spotify.com/api/token", headers=headers, data=payload, timeout=5)
             if res.status_code == 200:
-                return res.json().get("access_token")
+                token_data = res.json()                                                    
+                self._access_token = token_data.get("access_token")                      
+               # Tokens usually last 3600 seconds                                          
+                self._token_expiry = time.time() + token_data.get("expires_in", 3600)       
+                return self._access_token
         except Exception as e:
             print(f"❌ Failed to get Spotify token: {e}")
         return None
@@ -135,16 +147,28 @@ class VolcoSpotifyEngine:
             print(f"⚠️ Volume error: {e}")
     
     def fade_volume(self, target_volume, start_volume=93, duration=0.6):
-        """Fades volume smoothly in the background without hitting Spotify API rate limits."""
+        """Fades volume smoothly. If ducking, the first drop is instant to prevent Vella hearing music."""
         import threading
         import time
         import requests
 
-        def _fade():
-            headers = self._get_headers()
-            if not headers: 
-                return
-            device_id = self.get_volco_device_id(headers)
+        headers = self._get_headers()                                                      
+        if not headers: return                                                             
+        device_id = self.get_volco_device_id(headers)                                     
+
+        # ⚡ OPTIMIZATION: If we are ducking (going low), hit the first target IMMEDIATELY 
+        # before starting the background thread. This kills the delay.                     
+        if target_volume < start_volume:                                                   
+            try:                                                                           
+                # Set it to a "mid-way" duck instantly                                     
+                instant_low = int(start_volume - (start_volume - target_volume) * 0.7)     
+                url = f"{self.base_url}/me/player/volume?volume_percent={instant_low}"     
+                if device_id: url += f"&device_id={device_id}"                             
+                requests.put(url, headers=headers, timeout=2)                              
+                start_volume = instant_low # Continue the fade from here                   
+            except: pass                                                                   
+                                                                                        
+        def _fade(headers, device_id, target_volume, start_volume, duration): 
             
             # We step the volume in 3 quick chunks to create a smooth illusion
             steps = 3 
@@ -152,18 +176,14 @@ class VolcoSpotifyEngine:
             step_size = (target_volume - start_volume) / steps
             
             for i in range(1, steps + 1):
-                # Calculate the exact volume for this step
                 current_vol = int(start_volume + (step_size * i))
-                
-                # Safety check to keep it between 0 and 100
                 current_vol = max(0, min(100, current_vol)) 
                 
                 url = f"{self.base_url}/me/player/volume?volume_percent={current_vol}"
-                if device_id:
-                    url += f"&device_id={device_id}"
+                if device_id: url += f"&device_id={device_id}"
                 
                 try:
-                    requests.put(url, headers=headers)
+                    requests.put(url, headers=headers, timeout=2)
                 except Exception:
                     pass
                 
@@ -171,8 +191,8 @@ class VolcoSpotifyEngine:
                 
             print(f"🔊 Smooth fade complete: {target_volume}%")
 
-        # ⚡ Run in a background thread so it doesn't freeze Vella's response time!
-        threading.Thread(target=_fade, daemon=True).start()
+        # ⚡ Run the rest of the fade in a background thread                               
+        threading.Thread(target=_fade, args=(headers, device_id, target_volume, start_volume, duration), daemon=True).start() 
 
     def next_track(self):
         """Skips to the next song."""
@@ -189,18 +209,20 @@ class VolcoSpotifyEngine:
         print("⏮️ Went to previous track")
 
     def get_volco_device_id(self, headers):
-        """Hunts down the Volco Headset in your Spotify device list."""
+        """Hunts down the Volco Headset in your Spotify device list with caching."""       
+        if self._cached_device_id:                                                         
+            return self._cached_device_id
+    
         import requests
         try:
-            res = requests.get(f"{self.base_url}/me/player/devices", headers=headers)
+            res = requests.get(f"{self.base_url}/me/player/devices", headers=headers, timeout=5)
             if res.status_code == 200:
                 devices = res.json().get('devices', [])
                 for d in devices:
-                    # 🔍 DEBUG: Print out what Spotify actually sees
-                    print(f"📱 Found Device: {d['name']} (Active: {d['is_active']})")
                     
                     # Look for "volco" in the name (case-insensitive)
                     if "volco" in d['name'].lower():
+                        self._cached_device_id = d['id']
                         return d['id']
                 
                 # If Volco isn't found, fallback to any active device
