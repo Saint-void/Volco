@@ -173,7 +173,7 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                                         output=True)
 
                 voice_stream_active = True
-                should_exit_to_wake_mode = False  
+                pending_action_payload = None  
                 first_response_received = False  # ⚡ Tracks when Vella actually replies
 
                 while True:
@@ -198,33 +198,11 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                             if isinstance(msg, str) and msg.startswith("{"):
                                 try:
                                     payload = json.loads(msg)
-                                    if payload.get("action"):
-                                        should_exit_to_wake_mode = True
-
-                                    if voice_stream_active:
-                                        speaker_stream.stop_stream()
-                                        speaker_stream.close()
-                                        voice_stream_active = False
-                                        print("🔇 Released ALSA for Spotify.")
-
-                                    # Execute Spotify action
-                                    query = payload.get("query", "").rstrip(".!?,")
                                     action = payload.get("action")
-                                    if action == "spotify_play_track":
-                                        spotify.search_and_play(query, "track")
-                                    elif action == "spotify_next":
-                                        spotify.control_playback("next")
-                                    elif action == "spotify_previous":
-                                        spotify.control_playback("previous")
-                                    elif action == "spotify_pause":
-                                        spotify.control_playback("pause")
-                                    elif action == "spotify_resume":
-                                        spotify.control_playback("resume")
-                                    elif action == "spotify_play_album":
-                                        spotify.search_and_play(query, "album")
-                                    elif action == "spotify_play_playlist":
-                                        spotify.search_and_play(query, "playlist")
-                                    continue
+                                    # Store the action to execute AFTER speech finishes
+                                    if action and action != "none":
+                                        pending_action_payload = payload
+                                    continue 
                                 except: pass
 
                             if msg == "END_OF_RESPONSE" or msg == "NO_SPEECH":
@@ -239,10 +217,34 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 thinking_event.clear() # Failsafe to ensure sound loop dies
                 t.join()
                 wake_engine.stop()
+                
                 if voice_stream_active:
+                    speaker_stream.stop_stream()
                     speaker_stream.close()
+                    voice_stream_active = False
+                    print("🔇 Audio stream closed.")
 
-                if should_exit_to_wake_mode:
+                # ⚡ EXECUTE PENDING ACTION (Spotify, etc.)
+                if pending_action_payload:
+                    print("🎬 Executing deferred action...")
+                    action = pending_action_payload.get("action")
+                    query = pending_action_payload.get("query", "").rstrip(".!?,")
+                    
+                    if action == "spotify_play_track":
+                        spotify.search_and_play(query, "track")
+                    elif action == "spotify_next":
+                        spotify.control_playback("next")
+                    elif action == "spotify_previous":
+                        spotify.control_playback("previous")
+                    elif action == "spotify_pause":
+                        spotify.control_playback("pause")
+                    elif action == "spotify_resume":
+                        spotify.control_playback("resume")
+                    elif action == "spotify_play_album":
+                        spotify.search_and_play(query, "album")
+                    elif action == "spotify_play_playlist":
+                        spotify.search_and_play(query, "playlist")
+
                     print("\n🎵 Music mode active. Returning to Wake Word listener...")
                     return
 
