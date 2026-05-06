@@ -5,7 +5,7 @@ import time
 
 # --- CONFIG ---
 MODEL_PATH = "./assets/models/hey_vella.onnx"
-THRESHOLD = 0.3 # Matching your new settings
+THRESHOLD = 0.05 # Matching your new settings
 CHUNK_SIZE = 1280
 FORMAT = pyaudio.paInt16
 CHANNELS = 1

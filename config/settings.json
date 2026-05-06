@@ -4,7 +4,7 @@
     },
     "openwakeword": {
         "model_path": "./assets/models/hey_vella.onnx",
-        "threshold": 0.3
+        "threshold": 0.05
     },
     "audio": {
         "output_device_index": 3,
