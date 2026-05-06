@@ -16,6 +16,11 @@ class WakeWordEngine:
 
         try:
             print("🎧 Initializing openWakeWord Engine...")
+            
+            # ⚡ Ensure base models (melspectrogram, etc.) are downloaded
+            import openwakeword
+            openwakeword.utils.download_models()
+            
             model_path = config["openwakeword"]["model_path"]
             self.model = Model(
                 wakeword_models=[model_path],
