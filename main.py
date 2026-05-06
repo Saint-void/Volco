@@ -1,123 +1,27 @@
 import time
-import platform
-import sys
 import threading
-import subprocess 
-
-# ⚡ 1. ONLY IMPORT THE AUDIO ENGINE FIRST
-from core.audio_io import play_sfx 
-
-# ⚡ 2. PLAY THE BOOT SOUND INSTANTLY!
-print("\n--- VOLCO OS INITIALIZING ---")
-play_sfx("./assets/sounds/boot.wav", async_play=True)
-
-# ⚡ 3. NOW LOAD THE HEAVY AI LIBRARIES IN THE BACKGROUND
-from config.config_manager import config
-from core.audio_io import calibrate_mic
-from core.wake_word import WakeWordEngine
 from core.connection import ConnectionManager
+from core.audio_io import calibrate_mic, play_sfx
+from core.volco_spotify import VolcoSpotifyEngine
+from core.wake_word import WakeWordEngine
+from core.bluetooth_pairing import enable_bluetooth_pairing, manage_audio_bridge
 from core.data_pipe import start_data_pipe
-from core.volco_spotify import VolcoSpotifyManager
-from core.bluetooth_pairing import enable_bluetooth_pairing 
 from modes.ai_mode.session import start_ai_session
-from modes.ai_mode import session
-from core.volco_audio_engine import VolcoSpotifyEngine
+from config.config_manager import config
 
-# ==========================================
-# 🎵 SPOTIFY MANAGERS
-# ==========================================
-# Initialize them globally so everything can reach them
-spotify_hw = VolcoSpotifyManager() # Controls librespot (hardware)
-spotify_api = VolcoSpotifyEngine() # Controls volume/play/pause (API)
-
-# Start the background librespot daemon
-spotify_hw.start_client()
-
-# ==========================================
-# 🎵 BLUETOOTH BRIDGE MANAGER
-# ==========================================
-def manage_audio_bridge(action="stop"):
-    subprocess.run(["killall", "bluealsa-aplay"], stderr=subprocess.DEVNULL)
-    if action == "start":
-        subprocess.Popen(
-            ["bluealsa-aplay", "00:00:00:00:00:00"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-
-# ==========================================
-# 🔘 GLOBAL STATE & MANAGERS
-# ==========================================
-IS_WINDOWS = platform.system() == "Windows"
+# Global State
+volco_sleeping = False
 _button_pressed_event = False
+trigger_event = threading.Event()
+trigger_type = "VOICE"
 
-# Power State Trackers
-volco_sleeping = False  
-_was_held_flag = False  
-conn_manager = None   
+spotify_api = VolcoSpotifyEngine()
 
-# ==========================================
-# 🔘 HARDWARE BUTTON INTERRUPTS
-# ==========================================
-if not IS_WINDOWS:
-    try:
-        from gpiozero import Button #type: ignore
-        
-        volco_button = Button(17, bounce_time=0.1, hold_time=3.0)
-        
-        def button_held():
-            """Fires exactly when the button has been held for 3 seconds."""
-            global _was_held_flag, volco_sleeping
-            _was_held_flag = True 
-            
-            if not volco_sleeping:
-                print("\n🌙 [POWER] 3-Second Hold Detected! Entering Deep Sleep...")
-                volco_sleeping = True
-                threading.Thread(target=play_sfx, args=("./assets/sounds/shutdown.wav",)).start()
-
-                # ⚡ 1. Kill the Spotify Standalone Client
-                spotify_hw.stop_client()
-                
-                # 2. Kill Bluetooth & Audio Bridge
-                manage_audio_bridge("stop")
-                subprocess.run(["bluetoothctl", "power", "off"], stdout=subprocess.DEVNULL)
-
-                
-        def button_released():
-            """Fires when you let go of the button."""
-            global _was_held_flag, volco_sleeping, _button_pressed_event
-            
-            if _was_held_flag:
-                _was_held_flag = False
-                return
-                
-            if volco_sleeping:
-                print("\n☀️ [POWER] Waking up Volco!")
-                volco_sleeping = False
-                threading.Thread(target=play_sfx, args=("./assets/sounds/boot.wav",)).start()
-                time.sleep(2) 
-                
-                # 1. Turn the radio back on
-                subprocess.run(["bluetoothctl", "power", "on"], stdout=subprocess.DEVNULL)
-                threading.Thread(target=play_sfx, args=("./assets/sounds/bt_pairing.wav",)).start()
-                
-                # ⚡ 2. Boot the Spotify engine back up! (It auto-connects to the cache)
-                print("🎵 [POWER] Starting Standalone Spotify Client...")
-                spotify_hw.start_client()
-                
-            else:
-                print("\n🚨 [HARDWARE INTERRUPT] Single click! Triggering AI...")
-                session.button_pressed_flag.set()  
-                # ❌ REMOVED manage_audio_bridge("stop") and pause_media here!
-                # The main loop will handle ducking the volume smoothly.
-
-        volco_button.when_held = button_held
-        volco_button.when_released = button_released
-        print("🔘 [HARDWARE] Smart Button (Click/Hold) initialized on GPIO 17!")
-        
-    except ImportError:
-        print("⚠️ [HARDWARE] gpiozero not found! Button disabled.")
-        
+def handle_button():
+    global _button_pressed_event, trigger_event, trigger_type
+    _button_pressed_event = True
+    trigger_type = "BUTTON"
+    trigger_event.set()
 
 def check_for_button():
     global _button_pressed_event
@@ -126,11 +30,22 @@ def check_for_button():
         return True
     return False
 
+def wake_word_worker(wake_engine):
+    global trigger_event, trigger_type, volco_sleeping
+    while True:
+        if not volco_sleeping and wake_engine.is_functional:
+            is_wake, confidence = wake_engine.read_and_process()
+            if is_wake:
+                trigger_type = "VOICE"
+                trigger_event.set()
+        else:
+            time.sleep(0.1)
+
 # =============================
 # 🚀 THE DISPATCHER (MAIN OS)
 # =============================
 def main():
-    global conn_manager
+    global conn_manager, trigger_event, trigger_type, volco_sleeping
 
     print("\n--- VOLCO OS CORE BOOT ---")
 
@@ -150,6 +65,9 @@ def main():
     # ⚡ PRE-CACHE SPOTIFY (Reduces first-wake latency)                                    
     print("🎵 [BOOT] Pre-caching Spotify credentials...")                                  
     threading.Thread(target=spotify_api._get_access_token, daemon=True).start() 
+
+    # Start the dedicated Wake Word thread
+    threading.Thread(target=wake_word_worker, args=(wake_engine,), daemon=True).start()
 
     print("✅ VOLCO OS BOOT COMPLETE") 
     
@@ -181,20 +99,13 @@ def main():
             # Heartbeat
             conn_manager.send_ping()
             
-            # 🎧 Listen for Wake Word
-            is_wake_word, pcm = wake_engine.read_and_process()
-            
-            # 🔘 Listen for Physical Button Press
-            button_triggered = check_for_button()
-            
-            # ⚡ TRIGGER IF EITHER ONE HAPPENS
-            if is_wake_word or button_triggered:
-                trigger_type = "BUTTON" if button_triggered else "VOICE"
+            # 🎧 Check if anything triggered
+            if trigger_event.wait(timeout=0.1):
                 print(f"\n⚡ WAKE TRIGGERED ({trigger_type})!")
+                trigger_event.clear()
 
                 # 🔉 DUCK THE AUDIO via API
                 previous_volume = spotify_api.get_current_volume()
-                # Only duck if the volume is currently higher than the duck target (15)
                 duck_target = 15
                 if previous_volume > duck_target:
                     spotify_api.fade_volume(target_volume=duck_target, start_volume=previous_volume)                

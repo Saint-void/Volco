@@ -14,7 +14,7 @@ class WakeWordEngine:
         self.sample_rate = 16000
         
         # Pull threshold once at init
-        self.threshold = config.get("openwakeword", {}).get("threshold", 0.05)
+        self.threshold = config.get("openwakeword", {}).get("threshold", 0.5)
         
         try:
             print("🎧 Initializing openWakeWord Engine...")
