@@ -108,7 +108,7 @@ sudo apt install -y librespot
    * Thresholds for wake word and noise
    * Output device index for playback
 2. Add your Spotify `CLIENT_ID` and `CLIENT_SECRET` in `core/volco_spotify.py`.
-3. Update Picovoice wake word credentials in `config/settings.json`.
+3. Update openWakeWord model path and threshold in `config/settings.json`.
 
 ---
 
@@ -123,7 +123,7 @@ sudo apt install -y librespot
 
 ## 🎤 Wake Word & AI Session
 
-* Uses **Picovoice Porcupine** for hotword detection.
+* Uses **openWakeWord** for hotword detection.
 
 * When wake word detected:
 
@@ -132,7 +132,7 @@ sudo apt install -y librespot
   * Sends audio to AI engine (`ai_mode/session.py`)
   * Volco can respond with audio or trigger Spotify commands
 
-* Push-to-talk button is fallback for Pi setups without working Porcupine engine.
+* Push-to-talk button is fallback for Pi setups without working openWakeWord engine.
 
 ---
 
@@ -183,7 +183,7 @@ python main.py
 
 * **Mic not detected:** check `arecord -l` and adjust channels in `settings.json`.
 * **Spotify playback fails:** ensure `librespot` is installed and Spotify token is valid.
-* **Wake word fails:** Picovoice requires valid access key and keyword path.
+* **Wake word fails:** Ensure the `.onnx` model path is correct in `settings.json` and `onnxruntime` is installed.
 * **Bluetooth issues:** make sure `rfcomm` is free, or run `sudo rfcomm release /dev/rfcomm0`.
 
 ---

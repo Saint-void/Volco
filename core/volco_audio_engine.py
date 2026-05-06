@@ -122,6 +122,27 @@ class VolcoSpotifyEngine:
         else:
             print(f"❌ Pause failed: {res.status_code}")
 
+    def get_current_volume(self):
+        """Fetches the current volume percent from the active Spotify device."""
+        headers = self._get_headers()
+        if not headers: return 93 # Default fallback
+
+        try:
+            res = requests.get(f"{self.base_url}/me/player", headers=headers, timeout=2)
+            if res.status_code == 200:
+                data = res.json()
+                device = data.get("device", {})
+                volume = device.get("volume_percent")
+                if volume is not None:
+                    return volume
+            elif res.status_code == 204:
+                # No active playback, return default
+                return 93
+        except Exception as e:
+            print(f"⚠️ Error fetching current volume: {e}")
+        
+        return 93 # Default fallback
+
     def set_volume(self, volume_percent):
         """Sets the volume (0-100) specifically on Volco."""
         headers = self._get_headers()

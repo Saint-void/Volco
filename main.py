@@ -193,7 +193,12 @@ def main():
                 print(f"\n⚡ WAKE TRIGGERED ({trigger_type})!")
 
                 # 🔉 DUCK THE AUDIO via API
-                spotify_api.fade_volume(target_volume=15, start_volume=93)                
+                previous_volume = spotify_api.get_current_volume()
+                # Only duck if the volume is currently higher than the duck target (15)
+                duck_target = 15
+                if previous_volume > duck_target:
+                    spotify_api.fade_volume(target_volume=duck_target, start_volume=previous_volume)                
+                
                 wake_engine.stop() 
                 time.sleep(0.2)
                 
@@ -206,8 +211,8 @@ def main():
                     print("🔌 Connection lost. Attempting reconnect...")
                     if not conn_manager.connect():
                         print("❌ Failed to reconnect.")
-                        play_sfx(config["audio"]["sfx_offline"])
-                        spotify_api.fade_volume(target_volume=93, start_volume=15)
+                        if previous_volume > duck_target:
+                            spotify_api.fade_volume(target_volume=previous_volume, start_volume=duck_target)
                         wake_engine.start() 
                         continue
                 
@@ -220,7 +225,8 @@ def main():
                     
                     # 3️⃣ --- THE BLUETOOTH RESUME ---
                     print("✅ Session ended. Resuming media volume...")
-                    spotify_api.fade_volume(target_volume=93, start_volume=15)                   
+                    if previous_volume > duck_target:
+                        spotify_api.fade_volume(target_volume=previous_volume, start_volume=duck_target)                   
                     
                     wake_engine.start()
                     time.sleep(0.5)   
@@ -228,7 +234,8 @@ def main():
                     
                 except Exception as e:
                     print(f"⚠️ Error during session: {e}")
-                    spotify_api.fade_volume(target_volume=93, start_volume=15)
+                    if previous_volume > duck_target:
+                        spotify_api.fade_volume(target_volume=previous_volume, start_volume=duck_target)
                     conn_manager.close()
                     wake_engine.start()
                     

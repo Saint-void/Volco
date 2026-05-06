@@ -2,9 +2,9 @@
     "server": {
             "ws_url": "wss://exhilaratingly-heaveless-lael.ngrok-free.dev/volco_ws?client_type=device&user_id=PLACEHOLDER"
     },
-    "picovoice": {
-        "access_key": "5jy7XvuifQBNSHSm5GMhdVoy9JUdJpDz1Z7adQyT8oSK5dawqQb3ow==",
-        "keyword_path": "./assets/models/Hey-Vella_en_raspberry-pi_v4_0_0.ppn"
+    "openwakeword": {
+        "model_path": "./assets/models/hey_vella.onnx",
+        "threshold": 0.5
     },
     "audio": {
         "output_device_index": 3,
