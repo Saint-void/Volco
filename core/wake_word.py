@@ -26,7 +26,9 @@ class WakeWordEngine:
             model_path = config["openwakeword"]["model_path"]
             self.model = Model(
                 wakeword_models=[model_path],
-                inference_framework="onnx"
+                inference_framework="onnx",
+                vad_threshold=0.6,
+                enable_speex_noise_suppression=True
             )
             self.is_functional = True
             print(f"✅ Wake Word Engine Ready (Model: {model_path} | Threshold: {self.threshold})")
@@ -70,8 +72,19 @@ class WakeWordEngine:
             
             if prediction:
                 confidence = max(prediction.values())
-                # Trigger if confidence exceeds our threshold
-                return confidence >= self.threshold, confidence
+
+                if confidence >= self.threshold:
+                    self.activation_count += 1
+                else:
+                    self.activation_count = max(0, self.activation_count - 1)
+
+                if self.activation_count >= self.required_activations:
+                    self.activation_count = 0
+                    return True, confidence
+                
+                print(f"Wake Confidence: {confidence:.3f}")
+
+            return False, 0
             
             return False, 0
         except Exception:
