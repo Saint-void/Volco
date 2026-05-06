@@ -10,14 +10,13 @@ class WakeWordEngine:
         self.pa = pyaudio.PyAudio()
         self.audio_stream = None
         self.is_functional = False
-        self.chunk_size = 1280  # openWakeWord default for 80ms at 16kHz
+        self.chunk_size = 1280  # openWakeWord default (80ms)
         self.sample_rate = 16000
-        self.threshold = config.get("openwakeword", {}).get("threshold", 0.5)
-
+        
         try:
             print("🎧 Initializing openWakeWord Engine...")
             
-            # ⚡ Ensure base models (melspectrogram, etc.) are downloaded
+            # Ensure base models are present
             import openwakeword
             openwakeword.utils.download_models()
             
@@ -41,6 +40,8 @@ class WakeWordEngine:
             return 
             
         try:
+            # We use a smaller 'frames_per_buffer' in the stream to reduce latency,
+            # but we will still read 'self.chunk_size' at a time.
             self.audio_stream = self.pa.open(
                 rate=self.sample_rate,
                 channels=1,
@@ -48,6 +49,10 @@ class WakeWordEngine:
                 input=True,
                 frames_per_buffer=self.chunk_size
             )
+            # Flush the initial buffer to ensure we start with fresh audio
+            if self.audio_stream.get_read_available() > 0:
+                self.audio_stream.read(self.audio_stream.get_read_available(), exception_on_overflow=False)
+                
         except Exception as e:
             print(f"⚠️ Wake Word Mic Error: {e}")
             self.is_functional = False
@@ -59,23 +64,26 @@ class WakeWordEngine:
             return False, 0
 
         try:
+            # Check how much audio is waiting. If there's too much, we are lagging.
+            # We want to catch up to the "now".
+            available = self.audio_stream.get_read_available()
+            if available > self.chunk_size * 2:
+                # Skip the old data to get to the most recent audio
+                skip_chunks = (available // self.chunk_size) - 1
+                self.audio_stream.read(skip_chunks * self.chunk_size, exception_on_overflow=False)
+
             pcm = self.audio_stream.read(self.chunk_size, exception_on_overflow=False)
             audio_data = np.frombuffer(pcm, dtype=np.int16)
             
-            # Get predictions
             prediction = self.model.predict(audio_data)
             
-            # prediction is a dict: {model_name: confidence}
             if prediction:
                 confidence = max(prediction.values())
-                # ⚡ DEBUG: See what the engine is hearing
-                if confidence > 0.1:
-                    print(f"DEBUG: Wake Word Confidence: {confidence:.2f}")
-                return confidence >= self.threshold, confidence
+                threshold = config.get("openwakeword", {}).get("threshold", 0.3)
+                return confidence >= threshold, confidence
             
             return False, 0
-        except Exception as e:
-            # print(f"⚠️ Error processing audio: {e}")
+        except Exception:
             return False, 0
 
     def stop(self):
@@ -91,8 +99,6 @@ class WakeWordEngine:
     def cleanup(self):
         """Safely shuts down the engine and frees memory."""
         self.stop()
-        if self.model is not None:
-            # openWakeWord Model doesn't have a delete() method like Porcupine
-            self.model = None
+        self.model = None
         if self.pa is not None:
             self.pa.terminate()
