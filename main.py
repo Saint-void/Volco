@@ -2,7 +2,7 @@ import time
 import threading
 from core.connection import ConnectionManager
 from core.audio_io import calibrate_mic, play_sfx
-from core.volco_spotify import VolcoSpotifyEngine
+from core.volco_audio_engine import VolcoSpotifyEngine
 from core.wake_word import WakeWordEngine
 from core.bluetooth_pairing import enable_bluetooth_pairing, manage_audio_bridge
 from core.data_pipe import start_data_pipe
