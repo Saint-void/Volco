@@ -12,7 +12,7 @@ keyboard==0.13.5
 numpy==2.4.2
 packaging==26.0
 onnxruntime==1.20.1
-openwakeword==0.7.1
+openwakeword==0.6.0
 PyAudio==0.2.14
 pycparser==3.0
 pyjsparser==2.7.1
