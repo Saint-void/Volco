@@ -68,6 +68,9 @@ class WakeWordEngine:
             # prediction is a dict: {model_name: confidence}
             if prediction:
                 confidence = max(prediction.values())
+                # ⚡ DEBUG: See what the engine is hearing
+                if confidence > 0.1:
+                    print(f"DEBUG: Wake Word Confidence: {confidence:.2f}")
                 return confidence >= self.threshold, confidence
             
             return False, 0
