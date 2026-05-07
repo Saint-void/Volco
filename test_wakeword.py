@@ -4,23 +4,21 @@ from openwakeword.model import Model
 import time
 
 # --- CONFIG ---
-# We will use the built-in "alexa" or "hey_jarvis" model for stability
-CHOSEN_MODEL = "alexa" 
-THRESHOLD = 0.5
+MODEL_PATH = "./assets/models/Vella.onnx"
+THRESHOLD = 0.4
 CHUNK_SIZE = 1280
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 16000
 
 def test_engine():
-    print(f"🔍 Loading built-in model: {CHOSEN_MODEL}")
+    print(f"🔍 Loading model: {MODEL_PATH}")
     try:
-        # Load with built-in model name instead of a path
         owwModel = Model(
-            wakeword_models=[CHOSEN_MODEL],
+            wakeword_models=[MODEL_PATH],
             inference_framework="onnx"
         )
-        print(f"✅ Model '{CHOSEN_MODEL}' loaded successfully!")
+        print(f"✅ Model '{MODEL_PATH}' loaded successfully!")
     except Exception as e:
         print(f"❌ Failed to load model: {e}")
         return

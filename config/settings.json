@@ -3,8 +3,8 @@
             "ws_url": "wss://exhilaratingly-heaveless-lael.ngrok-free.dev/volco_ws?client_type=device&user_id=PLACEHOLDER"
     },
     "openwakeword": {
-        "model_path": "alexa",
-        "threshold": 0.6
+        "model_path": "./assets/models/Vella.onnx",
+        "threshold": 0.4
     },
     "audio": {
         "output_device_index": 3,
