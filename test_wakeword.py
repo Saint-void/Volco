@@ -44,7 +44,7 @@ def test_engine():
         return
 
     print("\n--- STARTING STABILITY TEST ---")
-    print(f"Say '{CHOSEN_MODEL.upper()}' (Threshold: {THRESHOLD})")
+    print(f"Say 'VELLA' (Model: {MODEL_PATH}, Threshold: {THRESHOLD})")
     print("Press Ctrl+C to stop.\n")
 
     try:
