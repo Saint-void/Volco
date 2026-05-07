@@ -14,25 +14,28 @@ class WakeWordEngine:
         self.sample_rate = 16000
         
         # Pull threshold once at init
-        self.threshold = config.get("openwakeword", {}).get("threshold", 0.6)
+        self.threshold = config.get("openwakeword", {}).get("threshold", 0.4)
         
         try:
-            print("🎧 Initializing openWakeWord Engine...")
+            print("🎧 Initializing openWakeWord Engine (Ensemble Mode)...")
             
             # Ensure base models are present
             import openwakeword
             openwakeword.utils.download_models()
             
-            model_path = config["openwakeword"]["model_path"]
+            # Support both single string or list of paths
+            model_paths = config["openwakeword"].get("model_paths", ["alexa"])
+            if isinstance(model_paths, str):
+                model_paths = [model_paths]
             
-            # Initialize the model (handles built-in names like "alexa" or file paths)
+            # Initialize with all models in the list
             self.model = Model(
-                wakeword_models=[model_path],
+                wakeword_models=model_paths,
                 inference_framework="onnx"
             )
             
             self.is_functional = True
-            print(f"✅ Wake Word Engine Ready (Model: {model_path} | Threshold: {self.threshold})")
+            print(f"✅ Wake Word Engine Ready (Models: {len(model_paths)} loaded | Threshold: {self.threshold})")
             
         except Exception as e:
             print(f"\n⚠️ [WARNING] Wake Word Engine Failed to Load.")
@@ -67,11 +70,14 @@ class WakeWordEngine:
             pcm = self.audio_stream.read(self.chunk_size, exception_on_overflow=False)
             audio_data = np.frombuffer(pcm, dtype=np.int16)
             
+            # Returns a dict of {model_name: confidence}
             prediction = self.model.predict(audio_data)
             
             if prediction:
+                # Find the highest confidence among all active models
                 confidence = max(prediction.values())
-                # Trigger if confidence exceeds our threshold
+                
+                # If any model exceeds threshold, we trigger
                 return confidence >= self.threshold, confidence
             
             return False, 0

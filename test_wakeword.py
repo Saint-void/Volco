@@ -4,7 +4,8 @@ from openwakeword.model import Model
 import time
 
 # --- CONFIG ---
-MODEL_PATH = "./assets/models/Vella.onnx"
+# Testing with both your custom model and a built-in one
+MODEL_PATHS = ["./assets/models/Vella.onnx", "alexa"]
 THRESHOLD = 0.4
 CHUNK_SIZE = 1280
 FORMAT = pyaudio.paInt16
@@ -12,15 +13,15 @@ CHANNELS = 1
 RATE = 16000
 
 def test_engine():
-    print(f"🔍 Loading model: {MODEL_PATH}")
+    print(f"🔍 Loading models: {MODEL_PATHS}")
     try:
         owwModel = Model(
-            wakeword_models=[MODEL_PATH],
+            wakeword_models=MODEL_PATHS,
             inference_framework="onnx"
         )
-        print(f"✅ Model '{MODEL_PATH}' loaded successfully!")
+        print(f"✅ Models loaded successfully!")
     except Exception as e:
-        print(f"❌ Failed to load model: {e}")
+        print(f"❌ Failed to load models: {e}")
         return
 
     pa = pyaudio.PyAudio()
@@ -43,8 +44,9 @@ def test_engine():
         print(f"❌ Failed to open microphone: {e}")
         return
 
-    print("\n--- STARTING STABILITY TEST ---")
-    print(f"Say 'VELLA' (Model: {MODEL_PATH}, Threshold: {THRESHOLD})")
+    print("\n--- STARTING ENSEMBLE TEST ---")
+    print(f"Listening for: {', '.join(MODEL_PATHS)}")
+    print(f"Threshold: {THRESHOLD}")
     print("Press Ctrl+C to stop.\n")
 
     try:
@@ -66,13 +68,13 @@ def test_engine():
                 output = []
                 triggered = False
                 for name, score in prediction.items():
-                    # Display the score
-                    output.append(f"{name}: {score:.4f}")
+                    short_name = name.split("/")[-1].split("\\")[-1]
+                    output.append(f"{short_name}: {score:.4f}")
                     if score >= THRESHOLD:
                         triggered = True
                 
                 max_score = max(prediction.values())
-                if max_score > 0.05: # Sensitivity floor for printing
+                if max_score > 0.05:
                     status = "🔥 TRIGGERED!" if triggered else "..."
                     print(f"[{status}] {', '.join(output)}")
 
