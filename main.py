@@ -127,11 +127,23 @@ if not IS_WINDOWS:
 def wake_word_worker(wake_engine):
     """Background thread to listen for the wake word without blocking the OS."""
     global trigger_event, trigger_type, volco_sleeping
+    
+    if not wake_engine.is_functional:
+        print("❌ [WAKE THREAD] Engine not functional. Thread exiting.")
+        return
+
+    print("👂 [WAKE THREAD] Background listener active and waiting for audio...")
+    
     while True:
-        if not volco_sleeping and wake_engine.is_functional:
-            # This is a blocking read, but it's in its own thread!
+        if not volco_sleeping:
+            # Wait for stream to be ready if it's not yet
+            if wake_engine.audio_stream is None:
+                time.sleep(0.1)
+                continue
+
             is_wake, confidence = wake_engine.read_and_process()
             if is_wake:
+                print(f"🎯 [WAKE THREAD] Match found! Confidence: {confidence:.2f}")
                 trigger_type = "VOICE"
                 trigger_event.set()
         else:

@@ -13,6 +13,7 @@ numpy==2.4.2
 packaging==26.0
 onnxruntime==1.20.1
 openwakeword==0.6.0
+speexdsp-ns==0.1.2
 PyAudio==0.2.14
 pycparser==3.0
 pyjsparser==2.7.1
