@@ -4,21 +4,23 @@ from openwakeword.model import Model
 import time
 
 # --- CONFIG ---
-MODEL_PATH = "./assets/models/hey_vella.onnx"
-THRESHOLD = 0.05 # Matching your new settings
+# We will use the built-in "alexa" or "hey_jarvis" model for stability
+CHOSEN_MODEL = "alexa" 
+THRESHOLD = 0.5
 CHUNK_SIZE = 1280
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 16000
 
 def test_engine():
-    print(f"🔍 Loading model: {MODEL_PATH}")
+    print(f"🔍 Loading built-in model: {CHOSEN_MODEL}")
     try:
+        # Load with built-in model name instead of a path
         owwModel = Model(
-            wakeword_models=[MODEL_PATH],
+            wakeword_models=[CHOSEN_MODEL],
             inference_framework="onnx"
         )
-        print("✅ Model loaded successfully!")
+        print(f"✅ Model '{CHOSEN_MODEL}' loaded successfully!")
     except Exception as e:
         print(f"❌ Failed to load model: {e}")
         return
@@ -43,36 +45,36 @@ def test_engine():
         print(f"❌ Failed to open microphone: {e}")
         return
 
-    print("\n--- STARTING TEST ---")
-    print(f"Say 'Hey Vella' (Threshold: {THRESHOLD})")
+    print("\n--- STARTING STABILITY TEST ---")
+    print(f"Say '{CHOSEN_MODEL.upper()}' (Threshold: {THRESHOLD})")
     print("Press Ctrl+C to stop.\n")
 
     try:
         while True:
-            # ⚡ REAL-TIME CATCH UP
-            # If the buffer has more than 2 chunks, skip the old ones to stay at "now"
+            # REAL-TIME CATCH UP
             available = stream.get_read_available()
             if available > CHUNK_SIZE * 2:
                 skip_chunks = (available // CHUNK_SIZE) - 1
                 stream.read(skip_chunks * CHUNK_SIZE, exception_on_overflow=False)
 
-            # Read the latest chunk
+            # Read audio data
             data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
             audio_data = np.frombuffer(data, dtype=np.int16)
 
+            # Predict
             prediction = owwModel.predict(audio_data)
 
             if prediction:
                 output = []
                 triggered = False
                 for name, score in prediction.items():
-                    short_name = name.split("/")[-1].split("\\")[-1]
-                    output.append(f"{short_name}: {score:.4f}")
+                    # Display the score
+                    output.append(f"{name}: {score:.4f}")
                     if score >= THRESHOLD:
                         triggered = True
                 
                 max_score = max(prediction.values())
-                if max_score > 0.1: # Only print if there is significant sound
+                if max_score > 0.05: # Sensitivity floor for printing
                     status = "🔥 TRIGGERED!" if triggered else "..."
                     print(f"[{status}] {', '.join(output)}")
 
