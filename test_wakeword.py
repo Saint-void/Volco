@@ -5,7 +5,7 @@ import time
 
 # --- CONFIG ---
 # Testing with all available models
-MODEL_PATHS = ["./assets/models/Vella.onnx", "./assets/models/hey_vella.onnx", "alexa"]
+MODEL_PATHS = ["./assets/models/Vella.onnx", "./assets/models/hey_vella.onnx", "./assets/models/Vella1.onnx", "alexa"]
 THRESHOLD = 0.4
 CHUNK_SIZE = 1280
 FORMAT = pyaudio.paInt16
