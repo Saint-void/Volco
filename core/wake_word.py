@@ -16,31 +16,30 @@ class WakeWordEngine:
         # Pull threshold once at init
         self.threshold = config.get("openwakeword", {}).get("threshold", 0.4)
         
+        # Anti-Duplicate / Debounce state
+        self.last_activation_time = 0
+        self.activation_cooldown = 1.0  # seconds
+
         try:
-            print("🎧 Initializing openWakeWord Engine (Ensemble Mode)...")
+            print("🎧 Initializing openWakeWord Engine (Optimized Ensemble)...")
             
             # Ensure base models are present
             import openwakeword
             openwakeword.utils.download_models()
             
-            # Support both single string or list of paths
             model_paths = config["openwakeword"].get("model_paths", ["alexa"])
-            if isinstance(model_paths, str):
-                model_paths = [model_paths]
             
-            # Initialize with all models in the list
             self.model = Model(
                 wakeword_models=model_paths,
                 inference_framework="onnx"
             )
             
             self.is_functional = True
-            print(f"✅ Wake Word Engine Ready (Models: {len(model_paths)} loaded | Threshold: {self.threshold})")
+            print(f"✅ Wake Word Engine Ready (Models: {model_paths} | Threshold: {self.threshold})")
             
         except Exception as e:
             print(f"\n⚠️ [WARNING] Wake Word Engine Failed to Load.")
             print(f"   -> Details: {e}")
-            print("⚙️ [SYSTEM] Volco degrading to BUTTON-ONLY mode (Push-to-Talk).")
             self.is_functional = False
 
     def start(self):
@@ -70,15 +69,18 @@ class WakeWordEngine:
             pcm = self.audio_stream.read(self.chunk_size, exception_on_overflow=False)
             audio_data = np.frombuffer(pcm, dtype=np.int16)
             
-            # Returns a dict of {model_name: confidence}
             prediction = self.model.predict(audio_data)
             
             if prediction:
-                # Find the highest confidence among all active models
                 confidence = max(prediction.values())
                 
-                # If any model exceeds threshold, we trigger
-                return confidence >= self.threshold, confidence
+                # Check threshold
+                if confidence >= self.threshold:
+                    current_time = time.time()
+                    # ⚡ Check cooldown to prevent duplicate triggers
+                    if (current_time - self.last_activation_time) > self.activation_cooldown:
+                        self.last_activation_time = current_time
+                        return True, confidence
             
             return False, 0
         except Exception:

@@ -4,8 +4,7 @@ from openwakeword.model import Model
 import time
 
 # --- CONFIG ---
-# Testing with all available models
-MODEL_PATHS = ["./assets/models/Vella.onnx", "./assets/models/hey_vella.onnx", "./assets/models/Vella1.onnx", "alexa"]
+MODEL_PATHS = ["./assets/models/Vella.onnx", "alexa"]
 THRESHOLD = 0.4
 CHUNK_SIZE = 1280
 FORMAT = pyaudio.paInt16
@@ -25,6 +24,8 @@ def test_engine():
         return
 
     pa = pyaudio.PyAudio()
+    last_trigger = 0
+    cooldown = 1.0 # 1 second cooldown
     
     try:
         stream = pa.open(
@@ -34,34 +35,19 @@ def test_engine():
             input=True,
             frames_per_buffer=CHUNK_SIZE
         )
-        
-        # Flush initial noise
-        if stream.get_read_available() > 0:
-            stream.read(stream.get_read_available(), exception_on_overflow=False)
-            
-        print(f"🎤 Microphone open (Real-time catch-up enabled)")
+        print(f"🎤 Microphone open (Anti-duplicate enabled)")
     except Exception as e:
         print(f"❌ Failed to open microphone: {e}")
         return
 
-    print("\n--- STARTING ENSEMBLE TEST ---")
-    print(f"Listening for: {', '.join(MODEL_PATHS)}")
-    print(f"Threshold: {THRESHOLD}")
+    print("\n--- STARTING STABLE TEST ---")
     print("Press Ctrl+C to stop.\n")
 
     try:
         while True:
-            # REAL-TIME CATCH UP
-            available = stream.get_read_available()
-            if available > CHUNK_SIZE * 2:
-                skip_chunks = (available // CHUNK_SIZE) - 1
-                stream.read(skip_chunks * CHUNK_SIZE, exception_on_overflow=False)
-
-            # Read audio data
             data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
             audio_data = np.frombuffer(data, dtype=np.int16)
 
-            # Predict
             prediction = owwModel.predict(audio_data)
 
             if prediction:
@@ -75,7 +61,14 @@ def test_engine():
                 
                 max_score = max(prediction.values())
                 if max_score > 0.05:
-                    status = "🔥 TRIGGERED!" if triggered else "..."
+                    status = "..."
+                    if triggered:
+                        if (time.time() - last_trigger) > cooldown:
+                            status = "🔥 TRIGGERED!"
+                            last_trigger = time.time()
+                        else:
+                            status = "⏳ DEBOUNCED"
+                    
                     print(f"[{status}] {', '.join(output)}")
 
     except KeyboardInterrupt:
