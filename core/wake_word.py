@@ -14,7 +14,7 @@ class WakeWordEngine:
         self.sample_rate = 16000
         
         # Pull threshold once at init
-        self.threshold = config.get("openwakeword", {}).get("threshold", 0.5)
+        self.threshold = config.get("openwakeword", {}).get("threshold", 0.6)
         
         try:
             print("🎧 Initializing openWakeWord Engine...")
@@ -24,12 +24,13 @@ class WakeWordEngine:
             openwakeword.utils.download_models()
             
             model_path = config["openwakeword"]["model_path"]
+            
+            # Initialize the model (handles built-in names like "alexa" or file paths)
             self.model = Model(
                 wakeword_models=[model_path],
-                inference_framework="onnx",
-                vad_threshold=0.6,
-                enable_speex_noise_suppression=True
+                inference_framework="onnx"
             )
+            
             self.is_functional = True
             print(f"✅ Wake Word Engine Ready (Model: {model_path} | Threshold: {self.threshold})")
             
@@ -63,8 +64,6 @@ class WakeWordEngine:
             return False, 0
 
         try:
-            # IMPORTANT: Do not skip chunks here. openWakeWord is a streaming model
-            # and needs the temporal context of every chunk to detect accurately.
             pcm = self.audio_stream.read(self.chunk_size, exception_on_overflow=False)
             audio_data = np.frombuffer(pcm, dtype=np.int16)
             
@@ -72,19 +71,8 @@ class WakeWordEngine:
             
             if prediction:
                 confidence = max(prediction.values())
-
-                if confidence >= self.threshold:
-                    self.activation_count += 1
-                else:
-                    self.activation_count = max(0, self.activation_count - 1)
-
-                if self.activation_count >= self.required_activations:
-                    self.activation_count = 0
-                    return True, confidence
-                
-                print(f"Wake Confidence: {confidence:.3f}")
-
-            return False, 0
+                # Trigger if confidence exceeds our threshold
+                return confidence >= self.threshold, confidence
             
             return False, 0
         except Exception:
