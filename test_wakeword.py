@@ -4,7 +4,15 @@ from openwakeword.model import Model
 import time
 
 # --- CONFIG ---
-MODEL_PATHS = ["./assets/models/Vella.onnx", "alexa"]
+MODEL_PATHS = [
+    "./assets/models/hey_vella.onnx",
+    "./assets/models/VELLA.onnx",
+    "./assets/models/Vella1.onnx",
+    "./assets/models/vellla.onnx",
+    "./assets/models/vellla (1).onnx",
+    "./assets/models/vellla (2).onnx",
+    "alexa"
+]
 THRESHOLD = 0.4
 CHUNK_SIZE = 1280
 FORMAT = pyaudio.paInt16

@@ -3,7 +3,15 @@
             "ws_url": "wss://exhilaratingly-heaveless-lael.ngrok-free.dev/volco_ws?client_type=device&user_id=PLACEHOLDER"
     },
     "openwakeword": {
-        "model_paths": ["./assets/models/Vella.onnx", "alexa"],
+        "model_paths": [
+            "./assets/models/hey_vella.onnx",
+            "./assets/models/VELLA.onnx",
+            "./assets/models/Vella1.onnx",
+            "./assets/models/vellla.onnx",
+            "./assets/models/vellla (1).onnx",
+            "./assets/models/vellla (2).onnx",
+            "alexa"
+        ],
         "threshold": 0.4
     },
     "audio": {
