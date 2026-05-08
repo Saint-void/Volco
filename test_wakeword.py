@@ -5,7 +5,6 @@ import time
 
 # --- CONFIG ---
 MODEL_PATHS = [
-    "./assets/models/hey_vella.onnx",
     "./assets/models/vella2.onnx",
     "./assets/models/vella1.onnx",
     "./assets/models/vellla.onnx",
