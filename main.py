@@ -166,9 +166,17 @@ def main():
     start_data_pipe(conn_manager)
 
     print("🧠 [BOOT] Initializing AI systems...")
+    print("🧠 [DEBUG] Initializing WakeWordEngine...")
     wake_engine = WakeWordEngine()
+    print("🧠 [DEBUG] WakeWordEngine initialized.")
+
+    print("🧠 [DEBUG] Connecting to server...")
     conn_manager.connect()
+    print("🧠 [DEBUG] Connected to server.")
+
+    print("🧠 [DEBUG] Calibrating microphone...")
     current_noise_floor = calibrate_mic(duration=1.0)
+    print(f"🧠 [DEBUG] Microphone calibrated. Noise floor: {current_noise_floor}")
 
     # ⚡ PRE-CACHE SPOTIFY
     print("🎵 [BOOT] Pre-caching Spotify credentials...")                                  

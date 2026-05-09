@@ -10,7 +10,7 @@ import select
 import audioop  # ⚡ NEW: Built-in audio operations library
 from core.volco_audio_engine import VolcoSpotifyEngine
 from config.config_manager import config
-from core.audio_io import play_sfx, print_audio_meter
+from core.audio_io import play_sfx, print_audio_meter, AdaptiveNoiseManager
 import string
 import subprocess
 
@@ -42,14 +42,14 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
     
     p = pyaudio.PyAudio()
     
-    # ❌ REMOVED: time.sleep(2) - We want lightning-fast response!
+    # ⚡ Initialize Adaptive Noise Manager
+    noise_manager = AdaptiveNoiseManager(initial_noise_floor=noise_floor)
     
     chunk = config["audio"]["chunk"]
     rate = config["audio"]["rate"]
     channels = config["audio"]["channels"]  
-    dynamic_threshold = noise_floor + config["audio"]["safety_margin"]
     
-    print(f"\n🧠 [AI MODE] Adaptive Threshold set to: {dynamic_threshold}")
+    print(f"\n🧠 [AI MODE] Adaptive Listening Active (Initial Floor: {noise_floor})")
     
 
     try:
@@ -69,6 +69,10 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                     break 
                 
                 volume = max(struct.unpack_from("%dh" % chunk, data))
+                
+                # ⚡ Update adaptive threshold
+                dynamic_threshold = noise_manager.update(volume)
+                
                 is_loud = volume > dynamic_threshold
                 status = "RECORDING" if started_talking else "LISTENING"
                 

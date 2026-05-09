@@ -43,6 +43,26 @@ def print_audio_meter(volume, threshold, is_active, status_text="LISTENING"):
     sys.stdout.write(f"\r{color}🎤 {status_text} | Level: {volume:05d} | Trig: {threshold} | [{bar}]{reset}")
     sys.stdout.flush()
 
+class AdaptiveNoiseManager:
+    def __init__(self, initial_noise_floor=200, alpha=0.05):
+        """
+        alpha: Smoothing factor (0 to 1). 
+               Higher = adapts faster, Lower = more stable.
+        """
+        self.noise_floor = initial_noise_floor
+        self.alpha = alpha
+        self.safety_margin = config["audio"].get("safety_margin", 100)
+
+    def update(self, current_peak):
+        """Updates the noise floor if the current peak looks like background noise."""
+        # Only update if the sound is 'relatively' quiet (not a sudden shout)
+        if current_peak < self.noise_floor * 2.0:
+            self.noise_floor = (1 - self.alpha) * self.noise_floor + self.alpha * current_peak
+        return self.get_threshold()
+
+    def get_threshold(self):
+        return int(self.noise_floor + self.safety_margin)
+
 def calibrate_mic(duration=1.0):
     """Measures room noise and returns the baseline noise floor using smart averaging."""
     
