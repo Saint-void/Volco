@@ -44,10 +44,10 @@ def print_audio_meter(volume, threshold, is_active, status_text="LISTENING"):
     sys.stdout.flush()
 
 class AdaptiveNoiseManager:
-    def __init__(self, initial_noise_floor=200, alpha=0.05):
+    def __init__(self, initial_noise_floor=200, alpha=0.02):
         """
         alpha: Smoothing factor (0 to 1). 
-               Higher = adapts faster, Lower = more stable.
+               Higher = adapts faster (risky), Lower = more stable.
         """
         self.noise_floor = initial_noise_floor
         self.alpha = alpha
