@@ -31,7 +31,8 @@ class WakeWordEngine:
             
             self.model = Model(
                 wakeword_models=model_paths,
-                inference_framework="onnx"
+                inference_framework="onnx",
+                vad_threshold=0.5  # ⚡ Only process if 50% sure it's human speech
             )
             
             self.is_functional = True
