@@ -30,6 +30,7 @@
         "safety_margin": 300,
         "session_timeout": 5.0,
         "min_speech_duration": 0.5,
-        "speech_trigger_frames": 3
+        "speech_trigger_frames": 3,
+        "suppress_alsa_warnings": true
     }
 }

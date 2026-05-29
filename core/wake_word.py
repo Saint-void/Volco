@@ -3,11 +3,13 @@ import numpy as np
 import pyaudio
 from openwakeword.model import Model
 from config.config_manager import config
+from core.audio_io import suppress_alsa_stderr
 
 class WakeWordEngine:
     def __init__(self):
         self.model = None
-        self.pa = pyaudio.PyAudio()
+        with suppress_alsa_stderr():
+            self.pa = pyaudio.PyAudio()
         self.audio_stream = None
         self.is_functional = False
         self.chunk_size = 1280  # openWakeWord default (80ms)
@@ -49,13 +51,14 @@ class WakeWordEngine:
             return 
             
         try:
-            self.audio_stream = self.pa.open(
-                rate=self.sample_rate,
-                channels=1,
-                format=pyaudio.paInt16,
-                input=True,
-                frames_per_buffer=self.chunk_size
-            )
+            with suppress_alsa_stderr():
+                self.audio_stream = self.pa.open(
+                    rate=self.sample_rate,
+                    channels=1,
+                    format=pyaudio.paInt16,
+                    input=True,
+                    frames_per_buffer=self.chunk_size
+                )
         except Exception as e:
             print(f"⚠️ Wake Word Mic Error: {e}")
             self.is_functional = False

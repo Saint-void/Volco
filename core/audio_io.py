@@ -5,7 +5,25 @@ import audioop
 import pyaudio
 import platform
 import subprocess
+from contextlib import contextmanager
 from config.config_manager import config
+
+@contextmanager
+def suppress_alsa_stderr():
+    """Temporarily hides noisy ALSA/PortAudio probing logs on Linux."""
+    if platform.system() == "Windows" or not config["audio"].get("suppress_alsa_warnings", True):
+        yield
+        return
+
+    devnull_fd = os.open(os.devnull, os.O_WRONLY)
+    stderr_fd = os.dup(2)
+    try:
+        os.dup2(devnull_fd, 2)
+        yield
+    finally:
+        os.dup2(stderr_fd, 2)
+        os.close(stderr_fd)
+        os.close(devnull_fd)
 
 def play_sfx(filename, async_play=False):
     """Plays a sound using OS-level mixers to prevent PyAudio lockups."""
@@ -72,15 +90,17 @@ def calibrate_mic(duration=1.0):
         print("\n🤫 Measuring room noise...")
         
     chunk = config["audio"]["chunk"]
-    p = pyaudio.PyAudio()
+    with suppress_alsa_stderr():
+        p = pyaudio.PyAudio()
     
-    stream = p.open(
-        format=pyaudio.paInt16, 
-        channels=config["audio"]["channels"], 
-        rate=config["audio"]["rate"], 
-        input=True, 
-        frames_per_buffer=chunk
-    )
+    with suppress_alsa_stderr():
+        stream = p.open(
+            format=pyaudio.paInt16, 
+            channels=config["audio"]["channels"], 
+            rate=config["audio"]["rate"], 
+            input=True, 
+            frames_per_buffer=chunk
+        )
     
     volumes = []
     start = time.time()

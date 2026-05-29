@@ -9,7 +9,7 @@ import select
 import audioop  # ⚡ NEW: Built-in audio operations library
 from core.volco_audio_engine import VolcoSpotifyEngine
 from config.config_manager import config
-from core.audio_io import play_sfx, print_audio_meter, AdaptiveNoiseManager
+from core.audio_io import play_sfx, print_audio_meter, AdaptiveNoiseManager, suppress_alsa_stderr
 import string
 import subprocess
 
@@ -39,7 +39,8 @@ def is_button_pressed():
 def start_ai_session(wake_engine, conn_manager, noise_floor):
     """Handles the active listening and speaking phase for Vella AI."""
     
-    p = pyaudio.PyAudio()
+    with suppress_alsa_stderr():
+        p = pyaudio.PyAudio()
     
     # ⚡ Initialize Adaptive Noise Manager
     noise_manager = AdaptiveNoiseManager(initial_noise_floor=noise_floor)
@@ -56,7 +57,8 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
     try:
         while conn_manager.is_connected():
             # --- PHASE 1: LISTEN ---
-            mic_stream = p.open(format=pyaudio.paInt16, channels=channels, rate=rate, input=True, frames_per_buffer=chunk)
+            with suppress_alsa_stderr():
+                mic_stream = p.open(format=pyaudio.paInt16, channels=channels, rate=rate, input=True, frames_per_buffer=chunk)
             silence_start = None
             started_talking = False
             session_timer = time.time()
@@ -138,10 +140,11 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                     try:
                         wf = wave.open("./assets/sounds/ai_respond_loading.wav", 'rb')
                         # Open a dedicated stream just for the loading sound
-                        load_stream = p.open(format=p.get_format_from_width(wf.getsampwidth()),
-                                             channels=wf.getnchannels(),
-                                             rate=wf.getframerate(),
-                                             output=True)
+                        with suppress_alsa_stderr():
+                            load_stream = p.open(format=p.get_format_from_width(wf.getsampwidth()),
+                                                 channels=wf.getnchannels(),
+                                                 rate=wf.getframerate(),
+                                                 output=True)
                         chunk_size = 1024
                         audio_data = wf.readframes(chunk_size)
                         
@@ -179,10 +182,11 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 t.start()
 
                 device_id = config["audio"].get("output_device_index")
-                speaker_stream = p.open(format=pyaudio.paInt16, 
-                                        channels=2, 
-                                        rate=22050, 
-                                        output=True)
+                with suppress_alsa_stderr():
+                    speaker_stream = p.open(format=pyaudio.paInt16, 
+                                            channels=2, 
+                                            rate=22050, 
+                                            output=True)
 
                 voice_stream_active = True
                 pending_action_payload = None  
