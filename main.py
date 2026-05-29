@@ -20,7 +20,6 @@ from core.data_pipe import start_data_pipe
 from core.volco_spotify import VolcoSpotifyManager
 from core.bluetooth_pairing import enable_bluetooth_pairing
 from modes.ai_mode.session import start_ai_session
-from modes.ai_mode import session
 from core.volco_audio_engine import VolcoSpotifyEngine
 
 # ==========================================
@@ -49,10 +48,10 @@ def manage_audio_bridge(action="stop"):
 # 🔘 GLOBAL STATE & MANAGERS
 # ==========================================
 IS_WINDOWS = platform.system() == "Windows"
-_button_pressed_event = False
 
 # Power State Trackers
 volco_sleeping = False
+ai_session_active = False
 _was_held_flag = False
 conn_manager = None
 
@@ -89,7 +88,7 @@ if not IS_WINDOWS:
 
         def button_released():
             """Fires when you let go of the button."""
-            global _was_held_flag, volco_sleeping, trigger_event, trigger_type
+            global _was_held_flag, volco_sleeping, ai_session_active, trigger_event, trigger_type
 
             if _was_held_flag:
                 _was_held_flag = False
@@ -109,12 +108,13 @@ if not IS_WINDOWS:
                 print("🎵 [POWER] Starting Standalone Spotify Client...")
                 spotify_hw.start_client()
 
+            elif ai_session_active:
+                print("\n🔘 [HARDWARE] AI already active; button press ignored.")
+
             else:
                 print("\n🚨 [HARDWARE INTERRUPT] Single click! Triggering AI...")
                 trigger_type = "BUTTON"
                 trigger_event.set()
-                # Also set the legacy flag for session.py
-                session.button_pressed_flag.set()
 
         volco_button.when_held = button_held
         volco_button.when_released = button_released
@@ -153,7 +153,7 @@ def wake_word_worker(wake_engine):
 # 🚀 THE DISPATCHER (MAIN OS)
 # =============================
 def main():
-    global conn_manager, trigger_event, trigger_type, volco_sleeping
+    global conn_manager, trigger_event, trigger_type, volco_sleeping, ai_session_active
 
     print("\n--- VOLCO OS CORE BOOT ---")
 
@@ -241,6 +241,7 @@ def main():
                     play_sfx(config["audio"]["sfx_wake"], async_play=True)
 
                     # 2️⃣ --- THE AI TAKEOVER ---
+                    ai_session_active = True
                     start_ai_session(wake_engine, conn_manager, current_noise_floor)
                     
                     # 3️⃣ --- THE BLUETOOTH RESUME ---
@@ -258,6 +259,8 @@ def main():
                         spotify_api.fade_volume(target_volume=previous_volume, start_volume=duck_target)
                     conn_manager.close()
                     wake_engine.start()
+                finally:
+                    ai_session_active = False
                     
     except KeyboardInterrupt:
         print("\n👋 Shutting down Volco OS...")

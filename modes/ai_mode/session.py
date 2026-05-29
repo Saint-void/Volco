@@ -15,7 +15,6 @@ import subprocess
 
 # Initialize the engine once
 spotify = VolcoSpotifyEngine()
-button_pressed_flag = threading.Event()
 
 # ⚡ THE SMART OS CHECKER
 IS_WINDOWS = platform.system() == "Windows"
@@ -166,20 +165,6 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 loading_thread.start()
 
                 wake_engine.start()
-                stop_event = threading.Event()
-
-                # ⚡ BUTTON INTERRUPT WATCHER
-                def watch_for_interrupt():
-                    while not stop_event.is_set():
-                        if button_pressed_flag.is_set():  
-                            print("\n🛑 INTERRUPT (button)!")
-                            conn_manager.send_data("INTERRUPT")
-                            stop_event.set()
-                            button_pressed_flag.clear() 
-                        time.sleep(0.05) 
-
-                t = threading.Thread(target=watch_for_interrupt, daemon=True)
-                t.start()
 
                 device_id = config["audio"].get("output_device_index")
                 with suppress_alsa_stderr():
@@ -193,16 +178,14 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 first_response_received = False  # ⚡ Tracks when Vella actually replies
 
                 while True:
-                    if stop_event.is_set(): break
                     try:
                         opcode, data = conn_manager.recv_data()
-                        if stop_event.is_set(): break
 
                         # ⚡ THE MOMENT VELLA REPLIES: Kill the sound & update the console
                         if not first_response_received:
                             first_response_received = True
                             thinking_event.clear() # This instantly stops the loading loop
-                            print("🤖 Volco Speaking... (Press Button to Interrupt)")
+                            print("🤖 Volco Speaking...")
 
                         if opcode == 2:  # Audio
                             if voice_stream_active:
@@ -229,9 +212,7 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                         break
 
                 # Cleanup
-                stop_event.set()
                 thinking_event.clear() # Failsafe to ensure sound loop dies
-                t.join()
                 wake_engine.stop()
                 
                 if voice_stream_active:
