@@ -29,6 +29,7 @@
         "silence_limit": 0.3,
         "safety_margin": 300,
         "session_timeout": 5.0,
-        "min_speech_duration": 0.5
+        "min_speech_duration": 0.5,
+        "speech_trigger_frames": 3
     }
 }

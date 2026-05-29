@@ -1,7 +1,6 @@
 import json
 import wave
 import time
-import struct
 import pyaudio
 import threading
 import platform
@@ -48,6 +47,8 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
     chunk = config["audio"]["chunk"]
     rate = config["audio"]["rate"]
     channels = config["audio"]["channels"]  
+    speech_trigger_frames = config["audio"].get("speech_trigger_frames", 3)
+    frame_duration = chunk / rate
     
     print(f"\n🧠 [AI MODE] Adaptive Listening Active (Initial Floor: {noise_floor})")
     
@@ -61,6 +62,10 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
             session_timer = time.time()
             speech_start_time = 0 
             valid_speech = False
+            loud_frame_count = 0
+
+            if not conn_manager.send_data("CLEAR"):
+                return
 
             while True:
                 data = mic_stream.read(chunk, exception_on_overflow=False)
@@ -68,7 +73,7 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 if not conn_manager.send_data(data):
                     break 
                 
-                volume = max(struct.unpack_from("%dh" % chunk, data))
+                volume = audioop.rms(data, 2)
                 
                 # ⚡ Update adaptive threshold
                 dynamic_threshold = noise_manager.update(volume)
@@ -79,26 +84,29 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 print_audio_meter(volume, dynamic_threshold, is_loud or started_talking, status)
 
                 if is_loud:
-                    if not started_talking:
+                    loud_frame_count += 1
+                    if not started_talking and loud_frame_count >= speech_trigger_frames:
                         started_talking = True
-                        speech_start_time = time.time()
+                        speech_start_time = time.time() - (speech_trigger_frames * frame_duration)
                     silence_start = None 
                     session_timer = time.time()
-                elif started_talking:
-                    if silence_start is None: silence_start = time.time()
-                    total_speech_time = silence_start - speech_start_time
-                    
-                    if time.time() - silence_start > config["audio"]["silence_limit"]:
-                        if total_speech_time > config["audio"]["min_speech_duration"]:
-                            valid_speech = True
-                            print(f"\n✅ Speech captured ({total_speech_time:.2f}s)")
-                        else:
-                            print(f"\n❌ Ignored noise ({total_speech_time:.2f}s)")
-                            valid_speech = False
-                        break 
                 else:
-                    if time.time() - session_timer > config["audio"]["session_timeout"]:
+                    loud_frame_count = 0
+                    if started_talking:
+                        if silence_start is None: silence_start = time.time()
+                        total_speech_time = silence_start - speech_start_time
+                        
+                        if time.time() - silence_start > config["audio"]["silence_limit"]:
+                            if total_speech_time > config["audio"]["min_speech_duration"]:
+                                valid_speech = True
+                                print(f"\n✅ Speech captured ({total_speech_time:.2f}s)")
+                            else:
+                                print(f"\n❌ Ignored noise ({total_speech_time:.2f}s)")
+                                valid_speech = False
+                            break 
+                    elif time.time() - session_timer > config["audio"]["session_timeout"]:
                         print("\n💤 Session Timeout.")
+                        conn_manager.send_data("CLEAR")
                         play_sfx(config["audio"]["session_end"], async_play=True)
                         mic_stream.stop_stream()
                         mic_stream.close()
@@ -253,6 +261,8 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                     return
 
                 print("\n👂 Ready for next turn...")
+            else:
+                conn_manager.send_data("CLEAR")
 
     except Exception as e:
         print(f"⚠️ Session Error: {e}")

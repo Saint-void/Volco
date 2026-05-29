@@ -1,7 +1,7 @@
 import os
 import sys
 import time
-import struct
+import audioop
 import pyaudio
 import platform
 import subprocess
@@ -53,11 +53,11 @@ class AdaptiveNoiseManager:
         self.alpha = alpha
         self.safety_margin = config["audio"].get("safety_margin", 100)
 
-    def update(self, current_peak):
-        """Updates the noise floor if the current peak looks like background noise."""
+    def update(self, current_level):
+        """Updates the noise floor if the current level looks like background noise."""
         # Only update if the sound is 'relatively' quiet (not a sudden shout)
-        if current_peak < self.noise_floor * 2.0:
-            self.noise_floor = (1 - self.alpha) * self.noise_floor + self.alpha * current_peak
+        if current_level < self.noise_floor * 2.0:
+            self.noise_floor = (1 - self.alpha) * self.noise_floor + self.alpha * current_level
         return self.get_threshold()
 
     def get_threshold(self):
@@ -87,11 +87,11 @@ def calibrate_mic(duration=1.0):
     
     while time.time() - start < duration:
         data = stream.read(chunk, exception_on_overflow=False)
-        peak = max(struct.unpack_from("%dh" % chunk, data))
-        volumes.append(peak)
+        level = audioop.rms(data, 2)
+        volumes.append(level)
             
         if duration > 0.6: 
-            print_audio_meter(peak, 0, False, "CALIBRATING")
+            print_audio_meter(level, 0, False, "CALIBRATING")
     
     stream.stop_stream()
     stream.close()
