@@ -1,6 +1,8 @@
 {
     "server": {
-            "ws_url": "ws://10.244.84.18:8001/volco_ws?client_type=device&user_id=PLACEHOLDER"
+//          "ws_url": "ws://10.244.84.18:8001/volco_ws?client_type=device&user_id=PLACEHOLDER"
+            "ws_url": "wss://exhilaratingly-heaveless-lael.ngrok-free.dev/volco_ws?client_type=device&user_id=PLACEHOLDER"
+
     },
     "openwakeword": {
         "model_paths": [
