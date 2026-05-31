@@ -86,7 +86,7 @@ def _play_response(p, conn_manager, session_state):
     thinking_event = threading.Event()
     thinking_event.set()
     pending_action_payload = None
-    keep_session_open = True
+    keep_session_open = False
 
     def loading_sound_worker():
         import wave
@@ -152,6 +152,9 @@ def _play_response(p, conn_manager, session_state):
                         break
                     if msg == "END_OF_RESPONSE":
                         break
+                    if msg in {"CONTINUE_SESSION", "KEEP_SESSION_OPEN", "FOLLOW_UP"}:
+                        keep_session_open = True
+                        break
                     if msg in {"END_SESSION", "SESSION_END", "CLOSE_SESSION"}:
                         keep_session_open = False
                         break
@@ -160,6 +163,8 @@ def _play_response(p, conn_manager, session_state):
                         try:
                             payload = json.loads(msg)
                             action = payload.get("action")
+                            if payload.get("keep_session_open") is True or payload.get("continue_session") is True:
+                                keep_session_open = True
                             if payload.get("end_session") is True:
                                 keep_session_open = False
                             if action and action != "none":

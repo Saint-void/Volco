@@ -259,13 +259,12 @@ def main():
                     ai_session_active = True
                     start_ai_session(wake_engine, conn_manager, current_noise_floor)
                     
-                    # 3️⃣ --- THE BLUETOOTH RESUME ---
-                    print("✅ Session ended. Resuming media volume...")
                     session_done.set()
                     with duck_lock:
                         previous_volume = duck_state["previous_volume"]
                         ducked = duck_state["ducked"]
                     if ducked and previous_volume is not None:
+                        print("✅ Session ended. Resuming media volume...")
                         spotify_api.fade_volume(target_volume=previous_volume, start_volume=duck_target)                   
                     
                     wake_engine.start()
