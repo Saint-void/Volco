@@ -20,9 +20,9 @@ class VoiceState(str, Enum):
     RESET_TO_IDLE = "RESET_TO_IDLE"
 
 
-def log_voice_event(event: str, **fields):
+def log_voice_event(event_name: str, **fields):
     details = " ".join(f"{key}={value}" for key, value in fields.items() if value is not None)
-    logger.info("%s%s", event, f" {details}" if details else "")
+    logger.info("%s%s", event_name, f" {details}" if details else "")
 
 
 class VoiceSessionStateMachine:
