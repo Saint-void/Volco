@@ -14,15 +14,6 @@ from core.state_machine import VoiceSessionStateMachine
 
 # Initialize the engine once
 spotify = VolcoSpotifyEngine()
-SPOTIFY_ACTIONS = {
-    "spotify_play_track",
-    "spotify_next",
-    "spotify_previous",
-    "spotify_pause",
-    "spotify_resume",
-    "spotify_play_album",
-    "spotify_play_playlist",
-}
 
 # ⚡ THE SMART OS CHECKER
 IS_WINDOWS = platform.system() == "Windows"
@@ -50,10 +41,6 @@ def _send_audio_segment(conn_manager, pcm: bytes, chunk_size: int = 12000) -> bo
             return False
         time.sleep(0.005)
     return True
-
-
-def _is_spotify_action(action):
-    return action in SPOTIFY_ACTIONS
 
 
 def _capture_speech_segment(p, noise_floor):
@@ -176,16 +163,12 @@ def _play_response(p, conn_manager, session_state):
                         try:
                             payload = json.loads(msg)
                             action = payload.get("action")
-                            if action and action != "none":
-                                pending_action_payload = payload
-                                if _is_spotify_action(action):
-                                    keep_session_open = False
-                                continue
-
                             if payload.get("keep_session_open") is True or payload.get("continue_session") is True:
                                 keep_session_open = True
                             if payload.get("end_session") is True:
                                 keep_session_open = False
+                            if action and action != "none":
+                                pending_action_payload = payload
                             continue
                         except Exception:
                             pass
@@ -224,7 +207,7 @@ def _execute_deferred_action(pending_action_payload):
     elif action == "spotify_play_playlist":
         spotify.search_and_play(query, "playlist")
 
-    print("\n🎵 Music action complete. Returning to Wake Word listener...")
+    print("\n🎵 Music mode active. Returning to Wake Word listener...")
 
 
 def start_ai_session(wake_engine, conn_manager, noise_floor):
