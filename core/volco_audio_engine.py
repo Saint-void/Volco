@@ -32,6 +32,18 @@ class VolcoSpotifyEngine:
         self._token_expiry = 0
         self._cached_device_id = None
 
+    def _get_user_id(self):
+        memory_path = os.path.join(os.path.dirname(__file__), "current_user.txt")
+        try:
+            with open(memory_path, "r") as f:
+                return f.read().strip() or "OFFLINE_MODE"
+        except OSError:
+            return "OFFLINE_MODE"
+
+    def _print_status(self, volume_percent, connected=True):
+        state = "connected" if connected else "not connected"
+        print(f"🎵 [SPOTIFY] user_id={self._get_user_id()} | volume={volume_percent}% | {state}")
+
     def _get_access_token(self):
         """Silently trades the permanent refresh token for a 60-minute access token with caching."""                
         # ⚡ Check if we have a valid cached token (with 30s buffer)                                                
@@ -161,7 +173,7 @@ class VolcoSpotifyEngine:
         try:
             res = requests.put(url, headers=headers)
             if res.status_code in [200, 202, 204]:
-                print(f"🔊 Volume set to {volume_percent}%")
+                self._print_status(volume_percent)
             else:
                 print(f"❌ Volume change failed: {res.status_code}")
         except Exception as e:
@@ -210,7 +222,7 @@ class VolcoSpotifyEngine:
                 
                 time.sleep(step_delay)
                 
-            print(f"🔊 Smooth fade complete: {target_volume}%")
+            self._print_status(target_volume)
 
         # ⚡ Run the rest of the fade in a background thread                               
         threading.Thread(target=_fade, args=(headers, device_id, target_volume, start_volume, duration), daemon=True).start() 
