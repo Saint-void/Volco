@@ -82,94 +82,54 @@ def _capture_speech_segment(p, noise_floor):
         mic_stream.close()
 
 
-def start_ai_session(wake_engine, conn_manager, noise_floor):
-    """Handles one wake-word-triggered listen/process/respond turn."""
-    
-    with suppress_alsa_stderr():
-        p = pyaudio.PyAudio()
+def _play_response(p, conn_manager, session_state):
+    thinking_event = threading.Event()
+    thinking_event.set()
+    pending_action_payload = None
+    keep_session_open = True
 
-    session_state = VoiceSessionStateMachine()
-    session_state.wake_word_detected()
-    print(f"\n🧠 [AI MODE] VAD Endpointing Active (Initial Floor: {noise_floor})")
+    def loading_sound_worker():
+        import wave
+        try:
+            wf = wave.open("./assets/sounds/ai_respond_loading.wav", "rb")
+            with suppress_alsa_stderr():
+                load_stream = p.open(
+                    format=p.get_format_from_width(wf.getsampwidth()),
+                    channels=wf.getnchannels(),
+                    rate=wf.getframerate(),
+                    output=True,
+                )
+            chunk_size = 1024
+            audio_data = wf.readframes(chunk_size)
 
-    try:
-        if not conn_manager.is_connected():
-            session_state.reset_to_idle("not_connected")
-            return
-
-        session_state.start_listening()
-        segment = _capture_speech_segment(p, noise_floor)
-        if segment is None:
-            conn_manager.send_data("CLEAR")
-            play_sfx(config["audio"]["session_end"], async_play=True)
-            session_state.reset_to_idle("timeout_or_noise")
-            return
-
-        if not conn_manager.is_connected():
-            session_state.reset_to_idle("connection_lost")
-            return
-
-        if not conn_manager.send_data("CLEAR"):
-            session_state.reset_to_idle("clear_failed")
-            return
-
-        if not _send_audio_segment(conn_manager, segment.pcm):
-            session_state.reset_to_idle("upload_failed")
-            return
-
-        session_state.processing_asr()
-        print("🚀 Sending COMMIT...")
-        if not conn_manager.send_data("COMMIT", wait=True):
-            session_state.reset_to_idle("commit_failed")
-            return
-
-        print("🧠 Vella is processing... (Waiting for response)")
-
-        thinking_event = threading.Event()
-        thinking_event.set()
-
-        def loading_sound_worker():
-            import wave
-            try:
-                wf = wave.open("./assets/sounds/ai_respond_loading.wav", "rb")
-                with suppress_alsa_stderr():
-                    load_stream = p.open(
-                        format=p.get_format_from_width(wf.getsampwidth()),
-                        channels=wf.getnchannels(),
-                        rate=wf.getframerate(),
-                        output=True,
-                    )
-                chunk_size = 1024
+            while thinking_event.is_set():
+                if len(audio_data) == 0:
+                    wf.rewind()
+                    audio_data = wf.readframes(chunk_size)
+                load_stream.write(audio_data)
                 audio_data = wf.readframes(chunk_size)
 
-                while thinking_event.is_set():
-                    if len(audio_data) == 0:
-                        wf.rewind()
-                        audio_data = wf.readframes(chunk_size)
-                    load_stream.write(audio_data)
-                    audio_data = wf.readframes(chunk_size)
+            load_stream.stop_stream()
+            load_stream.close()
+            wf.close()
+        except Exception:
+            pass
 
-                load_stream.stop_stream()
-                load_stream.close()
-                wf.close()
-            except Exception:
-                pass
+    loading_thread = threading.Thread(target=loading_sound_worker, daemon=True)
+    loading_thread.start()
 
-        loading_thread = threading.Thread(target=loading_sound_worker, daemon=True)
-        loading_thread.start()
+    with suppress_alsa_stderr():
+        speaker_stream = p.open(
+            format=pyaudio.paInt16,
+            channels=2,
+            rate=22050,
+            output=True,
+        )
 
-        with suppress_alsa_stderr():
-            speaker_stream = p.open(
-                format=pyaudio.paInt16,
-                channels=2,
-                rate=22050,
-                output=True,
-            )
+    voice_stream_active = True
+    first_audio_received = False
 
-        voice_stream_active = True
-        pending_action_payload = None
-        first_audio_received = False
-
+    try:
         while True:
             try:
                 opcode, data = conn_manager.recv_data()
@@ -192,11 +152,16 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                         break
                     if msg == "END_OF_RESPONSE":
                         break
+                    if msg in {"END_SESSION", "SESSION_END", "CLOSE_SESSION"}:
+                        keep_session_open = False
+                        break
 
                     if isinstance(msg, str) and msg.startswith("{"):
                         try:
                             payload = json.loads(msg)
                             action = payload.get("action")
+                            if payload.get("end_session") is True:
+                                keep_session_open = False
                             if action and action != "none":
                                 pending_action_payload = payload
                             continue
@@ -205,39 +170,97 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
 
             except Exception as e:
                 print(f"❌ Playback Error: {e}")
+                keep_session_open = False
                 break
-
+    finally:
         thinking_event.clear()
 
         if voice_stream_active:
             speaker_stream.stop_stream()
             speaker_stream.close()
-            voice_stream_active = False
-            print("🔇 Audio stream closed.")
 
-        if pending_action_payload:
-            print("🎬 Executing deferred action...")
-            action = pending_action_payload.get("action")
-            query = pending_action_payload.get("query", "").rstrip(".!?,")
+    return keep_session_open, pending_action_payload
 
-            if action == "spotify_play_track":
-                spotify.search_and_play(query, "track")
-            elif action == "spotify_next":
-                spotify.control_playback("next")
-            elif action == "spotify_previous":
-                spotify.control_playback("previous")
-            elif action == "spotify_pause":
-                spotify.control_playback("pause")
-            elif action == "spotify_resume":
-                spotify.control_playback("resume")
-            elif action == "spotify_play_album":
-                spotify.search_and_play(query, "album")
-            elif action == "spotify_play_playlist":
-                spotify.search_and_play(query, "playlist")
 
-            print("\n🎵 Music mode active. Returning to Wake Word listener...")
+def _execute_deferred_action(pending_action_payload):
+    print("🎬 Executing deferred action...")
+    action = pending_action_payload.get("action")
+    query = pending_action_payload.get("query", "").rstrip(".!?,")
 
-        session_state.reset_to_idle("response_complete")
+    if action == "spotify_play_track":
+        spotify.search_and_play(query, "track")
+    elif action == "spotify_next":
+        spotify.control_playback("next")
+    elif action == "spotify_previous":
+        spotify.control_playback("previous")
+    elif action == "spotify_pause":
+        spotify.control_playback("pause")
+    elif action == "spotify_resume":
+        spotify.control_playback("resume")
+    elif action == "spotify_play_album":
+        spotify.search_and_play(query, "album")
+    elif action == "spotify_play_playlist":
+        spotify.search_and_play(query, "playlist")
+
+    print("\n🎵 Music mode active. Returning to Wake Word listener...")
+
+
+def start_ai_session(wake_engine, conn_manager, noise_floor):
+    """Keeps a wake-word-triggered AI conversation open until it naturally ends."""
+    
+    with suppress_alsa_stderr():
+        p = pyaudio.PyAudio()
+
+    session_state = VoiceSessionStateMachine()
+    session_state.wake_word_detected()
+    print(f"\n🧠 [AI MODE] VAD Endpointing Active (Initial Floor: {noise_floor})")
+
+    try:
+        if not conn_manager.is_connected():
+            session_state.reset_to_idle("not_connected")
+            return
+
+        while True:
+            session_state.start_listening()
+            segment = _capture_speech_segment(p, noise_floor)
+            if segment is None:
+                conn_manager.send_data("CLEAR")
+                play_sfx(config["audio"]["session_end"], async_play=True)
+                session_state.reset_to_idle("timeout_or_noise")
+                break
+
+            if not conn_manager.is_connected():
+                session_state.reset_to_idle("connection_lost")
+                break
+
+            if not conn_manager.send_data("CLEAR"):
+                session_state.reset_to_idle("clear_failed")
+                break
+
+            if not _send_audio_segment(conn_manager, segment.pcm):
+                session_state.reset_to_idle("upload_failed")
+                break
+
+            session_state.processing_asr()
+            print("🚀 Sending COMMIT...")
+            if not conn_manager.send_data("COMMIT", wait=True):
+                session_state.reset_to_idle("commit_failed")
+                break
+
+            print("🧠 Vella is processing... (Waiting for response)")
+            keep_session_open, pending_action_payload = _play_response(p, conn_manager, session_state)
+
+            if pending_action_payload:
+                _execute_deferred_action(pending_action_payload)
+                session_state.reset_to_idle("deferred_action")
+                break
+
+            if not keep_session_open:
+                session_state.reset_to_idle("server_closed_session")
+                break
+
+            print("\n🎤 Conversation still open. Listening for your next reply...")
+
         return
 
     except Exception as e:
