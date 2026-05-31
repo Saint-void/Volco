@@ -98,10 +98,6 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
             return
 
         session_state.start_listening()
-        if not conn_manager.send_data("CLEAR"):
-            session_state.reset_to_idle("clear_failed")
-            return
-
         segment = _capture_speech_segment(p, noise_floor)
         if segment is None:
             conn_manager.send_data("CLEAR")
@@ -111,6 +107,10 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
 
         if not conn_manager.is_connected():
             session_state.reset_to_idle("connection_lost")
+            return
+
+        if not conn_manager.send_data("CLEAR"):
+            session_state.reset_to_idle("clear_failed")
             return
 
         if not _send_audio_segment(conn_manager, segment.pcm):
