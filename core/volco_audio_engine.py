@@ -135,25 +135,29 @@ class VolcoSpotifyEngine:
             print(f"❌ Pause failed: {res.status_code}")
 
     def get_current_volume(self):
-        """Fetches the current volume percent from the active Spotify device."""
+        """Return Volco's volume only when Volco is actively playing music."""
         headers = self._get_headers()
-        if not headers: return 93 # Default fallback
+        if not headers:
+            return None
 
         try:
             res = requests.get(f"{self.base_url}/me/player", headers=headers, timeout=2)
             if res.status_code == 200:
                 data = res.json()
                 device = data.get("device", {})
+                device_name = device.get("name", "").lower()
+                is_volco = "volco" in device_name
+                is_playing = data.get("is_playing", False)
+                if not is_volco or not is_playing:
+                    return None
+
                 volume = device.get("volume_percent")
                 if volume is not None:
                     return volume
-            elif res.status_code == 204:
-                # No active playback, return default
-                return 93
         except Exception as e:
             print(f"⚠️ Error fetching current volume: {e}")
         
-        return 93 # Default fallback
+        return None
 
     def set_volume(self, volume_percent):
         """Sets the volume (0-100) specifically on Volco."""
@@ -164,6 +168,9 @@ class VolcoSpotifyEngine:
         # Target the Volco device specifically so we don't accidentally 
         # change the volume on your phone or TV.
         device_id = self.get_volco_device_id(headers)
+        if not device_id:
+            print(f"🎵 [SPOTIFY] user_id={self._get_user_id()} | volume={volume_percent}% | not connected")
+            return
         
         # Spotify Volume API uses a query parameter: ?volume_percent=X
         url = f"{self.base_url}/me/player/volume?volume_percent={volume_percent}"
@@ -187,7 +194,10 @@ class VolcoSpotifyEngine:
 
         headers = self._get_headers()                                                      
         if not headers: return                                                             
-        device_id = self.get_volco_device_id(headers)                                     
+        device_id = self.get_volco_device_id(headers)
+        if not device_id:
+            self._print_status(target_volume, connected=False)
+            return
 
         # ⚡ OPTIMIZATION: If we are ducking (going low), hit the first target IMMEDIATELY 
         # before starting the background thread. This kills the delay.                     
@@ -256,11 +266,6 @@ class VolcoSpotifyEngine:
                     # Look for "volco" in the name (case-insensitive)
                     if "volco" in d['name'].lower():
                         self._cached_device_id = d['id']
-                        return d['id']
-                
-                # If Volco isn't found, fallback to any active device
-                for d in devices:
-                    if d['is_active']:
                         return d['id']
         except Exception as e:
             print(f"⚠️ Error fetching devices: {e}")

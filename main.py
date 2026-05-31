@@ -220,7 +220,7 @@ def main():
                 # 🔉 DUCK THE AUDIO
                 previous_volume = spotify_api.get_current_volume()
                 duck_target = 15
-                if previous_volume > duck_target:
+                if previous_volume is not None and previous_volume > duck_target:
                     spotify_api.fade_volume(target_volume=duck_target, start_volume=previous_volume)                
                 
                 wake_engine.stop() 
@@ -231,7 +231,7 @@ def main():
                     print("🔌 Connection lost. Attempting reconnect...")
                     if not conn_manager.connect():
                         print("❌ Failed to reconnect.")
-                        if previous_volume > duck_target:
+                        if previous_volume is not None and previous_volume > duck_target:
                             spotify_api.fade_volume(target_volume=previous_volume, start_volume=duck_target)
                         wake_engine.start() 
                         continue
@@ -246,7 +246,7 @@ def main():
                     
                     # 3️⃣ --- THE BLUETOOTH RESUME ---
                     print("✅ Session ended. Resuming media volume...")
-                    if previous_volume > duck_target:
+                    if previous_volume is not None and previous_volume > duck_target:
                         spotify_api.fade_volume(target_volume=previous_volume, start_volume=duck_target)                   
                     
                     wake_engine.start()
@@ -255,7 +255,7 @@ def main():
                     
                 except Exception as e:
                     print(f"⚠️ Error during session: {e}")
-                    if previous_volume > duck_target:
+                    if previous_volume is not None and previous_volume > duck_target:
                         spotify_api.fade_volume(target_volume=previous_volume, start_volume=duck_target)
                     conn_manager.close()
                     wake_engine.start()
