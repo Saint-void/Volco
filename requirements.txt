@@ -1,33 +1,20 @@
-beautifulsoup4==4.14.3
-bleak==2.1.1
-bless==0.3.0
-certifi==2026.1.4
-cffi==2.0.0
-charset-normalizer==3.4.4
-docopt==0.6.2
-idna==3.11
-ifaddr==0.2.0
-Js2Py==0.74
-keyboard==0.13.5
-numpy==2.4.2
-packaging==26.0
-onnxruntime==1.20.1
-openwakeword==0.6.0
-speexdsp-ns==0.1.2
-PyAudio==0.2.14
-pycparser==3.0
-pyjsparser==2.7.1
-PyPrind==2.11.3
-pySmartDL==1.3.4
-python-dotenv==1.2.1
-requests==2.32.5
-six==1.17.0
-sounddevice==0.5.5
-soupsieve==2.8.3
-typing_extensions==4.15.0
-tzdata==2025.3
-tzlocal==5.3.1
-urllib3==2.6.3
-websocket-client==1.9.0
-webrtcvad==2.0.10
-zeroconf==0.148.0
+# Core audio, wake word, and voice activity detection
+numpy
+openwakeword
+onnxruntime
+PyAudio
+webrtcvad
+
+# Network, WebRTC, and Spotify control
+aiohttp
+aiortc
+requests
+zeroconf
+
+# Raspberry Pi hardware and Bluetooth data pipe
+bluezero
+gpiozero
+pyserial
+
+# Optional keyboard fallback used during development/testing
+keyboard
