@@ -26,11 +26,19 @@
         "rate": 16000,
         "channels": 1,
         "chunk": 512,
-        "silence_limit": 0.3,
+        "vad_frame_ms": 30,
+        "silence_limit": 1.0,
+        "endpoint_silence_ms": 1000,
+        "pre_roll_ms": 240,
+        "trailing_padding_ms": 180,
         "safety_margin": 300,
         "session_timeout": 5.0,
         "min_speech_duration": 0.5,
+        "max_utterance_ms": 12000,
         "speech_trigger_frames": 3,
+        "vad_aggressiveness": 2,
+        "min_energy": 350,
+        "energy_ratio": 1.8,
         "suppress_alsa_warnings": true
     }
 }

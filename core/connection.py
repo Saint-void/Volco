@@ -112,8 +112,7 @@ class ConnectionManager:
             
             self.channel = self.pc.createDataChannel(
                 "volco_audio", 
-                ordered=False, 
-                maxRetransmits=0
+                ordered=True
             )
 
             @self.channel.on("message")
@@ -171,10 +170,16 @@ class ConnectionManager:
             self.send_data("PING")
             self.last_ping = time.time()
 
-    def send_data(self, data):
+    def send_data(self, data, wait=False, timeout=2.0):
         if not self.is_connected(): return False
         if self.loop is None: return False
-        asyncio.run_coroutine_threadsafe(self._async_send(data), self.loop)
+        future = asyncio.run_coroutine_threadsafe(self._async_send(data), self.loop)
+        if wait:
+            try:
+                future.result(timeout=timeout)
+            except Exception as e:
+                self.set_offline(f"UDP Channel Send Wait Error: {e}")
+                return False
         return True
 
     async def _async_send(self, data):
