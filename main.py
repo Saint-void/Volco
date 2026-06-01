@@ -126,7 +126,7 @@ if not IS_WINDOWS:
 
 def wake_word_worker(wake_engine):
     """Background thread to listen for the wake word without blocking the OS."""
-    global trigger_event, trigger_type, volco_sleeping
+    global trigger_event, trigger_type, volco_sleeping, ai_session_active
     
     if not wake_engine.is_functional:
         print("❌ [WAKE THREAD] Engine not functional. Thread exiting.")
@@ -135,19 +135,24 @@ def wake_word_worker(wake_engine):
     print("👂 [WAKE THREAD] Background listener active and waiting for audio...")
     
     while True:
-        if not volco_sleeping:
-            # Wait for stream to be ready if it's not yet
-            if wake_engine.audio_stream is None:
-                time.sleep(0.1)
-                continue
-
-            is_wake, confidence = wake_engine.read_and_process()
-            if is_wake:
-                print(f"🎯 [WAKE THREAD] Match found! Confidence: {confidence:.2f}")
-                trigger_type = "VOICE"
-                trigger_event.set()
-        else:
+        if volco_sleeping:
             time.sleep(0.5)
+            continue
+
+        if ai_session_active or trigger_event.is_set():
+            time.sleep(0.05)
+            continue
+
+        # Wait for stream to be ready if it's not yet
+        if wake_engine.audio_stream is None:
+            time.sleep(0.1)
+            continue
+
+        is_wake, confidence = wake_engine.read_and_process()
+        if is_wake and not ai_session_active and not trigger_event.is_set():
+            print(f"🎯 [WAKE THREAD] Match found! Confidence: {confidence:.2f}")
+            trigger_type = "VOICE"
+            trigger_event.set()
 
 # =============================
 # 🚀 THE DISPATCHER (MAIN OS)
@@ -214,8 +219,10 @@ def main():
             
             # 🎧 3. THE TRIGGER CHECK (Wait for Voice or Button)
             if trigger_event.wait(timeout=0.1):
-                print(f"\n⚡ WAKE TRIGGERED ({trigger_type})!")
+                session_trigger_type = trigger_type
+                print(f"\n⚡ WAKE TRIGGERED ({session_trigger_type})!")
                 trigger_event.clear()
+                ai_session_active = True
 
                 # 🔉 Duck music in the background so the mic can open immediately.
                 duck_target = 15
@@ -236,6 +243,7 @@ def main():
 
                 threading.Thread(target=duck_music_worker, daemon=True).start()
                 wake_engine.stop() 
+                wake_engine.reset_detection_state(suppress_seconds=1.0, require_rearm=True)
                 
                 # Network Check
                 if not conn_manager.is_connected():
@@ -248,6 +256,8 @@ def main():
                             ducked = duck_state["ducked"]
                         if ducked and previous_volume is not None:
                             spotify_api.fade_volume(target_volume=previous_volume, start_volume=duck_target)
+                        trigger_event.clear()
+                        ai_session_active = False
                         wake_engine.start() 
                         continue
                 
@@ -256,7 +266,6 @@ def main():
                     play_sfx(config["audio"]["sfx_wake"], async_play=True)
 
                     # 2️⃣ --- THE AI TAKEOVER ---
-                    ai_session_active = True
                     start_ai_session(wake_engine, conn_manager, current_noise_floor)
                     
                     session_done.set()
@@ -267,6 +276,7 @@ def main():
                         print("✅ Session ended. Resuming media volume...")
                         spotify_api.fade_volume(target_volume=previous_volume, start_volume=duck_target)                   
                     
+                    trigger_event.clear()
                     wake_engine.start()
                     time.sleep(0.5)   
                     print("\n✅ VOLCO OS READY | Waiting for wake word or button...")
@@ -280,6 +290,8 @@ def main():
                     if ducked and previous_volume is not None:
                         spotify_api.fade_volume(target_volume=previous_volume, start_volume=duck_target)
                     conn_manager.close()
+                    trigger_event.clear()
+                    wake_engine.reset_detection_state(suppress_seconds=1.0, require_rearm=True)
                     wake_engine.start()
                 finally:
                     session_done.set()
@@ -290,6 +302,8 @@ def main():
         manage_audio_bridge("stop")
         play_sfx("./assets/sounds/shutdown.wav")
     finally:
+        ai_session_active = False
+        trigger_event.clear()
         manage_audio_bridge("stop")
         conn_manager.close()
         wake_engine.cleanup()

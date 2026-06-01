@@ -5,6 +5,7 @@ from openwakeword.model import Model
 from config.config_manager import config
 from core.audio_io import suppress_alsa_stderr
 
+
 class WakeWordEngine:
     def __init__(self):
         self.model = None
@@ -21,6 +22,11 @@ class WakeWordEngine:
         # Anti-Duplicate / Debounce state
         self.last_activation_time = 0
         self.activation_cooldown = 1.0  # seconds
+        self.rearm_threshold = self.threshold * 0.5
+        self.rearm_quiet_frames = 3
+        self._quiet_frames = self.rearm_quiet_frames
+        self._armed = True
+        self._suppress_until = 0
 
         try:
             print("🎧 Initializing openWakeWord Engine (Optimized Ensemble)...")
@@ -59,9 +65,24 @@ class WakeWordEngine:
                     input=True,
                     frames_per_buffer=self.chunk_size
                 )
+            self.reset_detection_state(suppress_seconds=0.8, require_rearm=True)
         except Exception as e:
             print(f"⚠️ Wake Word Mic Error: {e}")
             self.is_functional = False
+
+    def reset_detection_state(self, suppress_seconds=0.0, require_rearm=True):
+        """Clears wake-word memory so an old activation cannot fire again."""
+        self.last_activation_time = 0
+        self._quiet_frames = 0 if require_rearm else self.rearm_quiet_frames
+        self._armed = not require_rearm
+        self._suppress_until = time.monotonic() + suppress_seconds
+
+        reset = getattr(self.model, "reset", None)
+        if callable(reset):
+            try:
+                reset()
+            except Exception:
+                pass
 
     def read_and_process(self):
         """Reads audio and checks for the wake word."""
@@ -77,13 +98,25 @@ class WakeWordEngine:
             
             if prediction:
                 confidence = max(prediction.values())
+
+                if confidence <= self.rearm_threshold:
+                    self._quiet_frames += 1
+                    if self._quiet_frames >= self.rearm_quiet_frames:
+                        self._armed = True
+                else:
+                    self._quiet_frames = 0
+
+                if time.monotonic() < self._suppress_until:
+                    return False, confidence
                 
                 # Check threshold
-                if confidence >= self.threshold:
+                if self._armed and confidence >= self.threshold:
                     current_time = time.time()
                     # ⚡ Check cooldown to prevent duplicate triggers
                     if (current_time - self.last_activation_time) > self.activation_cooldown:
                         self.last_activation_time = current_time
+                        self._armed = False
+                        self._quiet_frames = 0
                         return True, confidence
             
             return False, 0
