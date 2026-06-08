@@ -45,7 +45,65 @@ def _send_audio_segment(conn_manager, pcm: bytes, chunk_size: int = 12000) -> bo
     return True
 
 
+def _capture_speech_segment_streaming(p, noise_floor, conn_manager):
+    """Captures speech while streaming audio chunks to server for real-time STT."""
+    pipeline_config = AudioPipelineConfig.from_app_config(noise_floor)
+    pipeline = EndpointingAudioPipeline(pipeline_config)
+    channels = config["audio"]["channels"]
+
+    with suppress_alsa_stderr():
+        mic_stream = p.open(
+            format=pyaudio.paInt16,
+            channels=channels,
+            rate=pipeline_config.sample_rate,
+            input=True,
+            frames_per_buffer=pipeline.frame_samples,
+        )
+
+    try:
+        total_pcm = bytearray()
+        chunk_count = 0
+        
+        while True:
+            data = mic_stream.read(pipeline.frame_samples, exception_on_overflow=False)
+            result = pipeline.process_frame(data)
+            status = "RECORDING" if pipeline.is_recording else "LISTENING"
+
+            print_audio_meter(
+                result.decision.rms,
+                result.decision.energy_threshold,
+                result.decision.is_speech or pipeline.is_recording,
+                status,
+            )
+
+            # ⚡ STREAM AUDIO CHUNK TO SERVER IMMEDIATELY
+            total_pcm.extend(data)
+            if pipeline.is_recording and len(total_pcm) >= 8000:  # ~250ms of audio at 16kHz
+                chunk_count += 1
+                if not conn_manager.send_data(bytes(total_pcm), wait=False):
+                    print("⚠️ Failed to stream audio chunk")
+                    return None
+                total_pcm = bytearray()
+
+            if result.segment is not None:
+                # ⚡ SEND FINAL CHUNK
+                if total_pcm:
+                    if not conn_manager.send_data(bytes(total_pcm), wait=False):
+                        print("⚠️ Failed to send final audio chunk")
+                
+                print(f"\n✅ Speech endpoint detected ({result.segment.duration_ms / 1000:.2f}s, {chunk_count} chunks streamed)")
+                return result.segment
+
+            if pipeline.timed_out():
+                print("\n💤 Session Timeout.")
+                return None
+    finally:
+        mic_stream.stop_stream()
+        mic_stream.close()
+
+
 def _capture_speech_segment(p, noise_floor):
+    """Legacy function for backward compatibility. Use _capture_speech_segment_streaming instead."""
     pipeline_config = AudioPipelineConfig.from_app_config(noise_floor)
     pipeline = EndpointingAudioPipeline(pipeline_config)
     channels = config["audio"]["channels"]
@@ -244,6 +302,7 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
     session_state = VoiceSessionStateMachine()
     session_state.wake_word_detected()
     print(f"\n🧠 [AI MODE] VAD Endpointing Active (Initial Floor: {noise_floor})")
+    print("📡 [STREAMING] Real-time audio streaming enabled for faster STT processing\n")
 
     try:
         if not conn_manager.is_connected():
@@ -252,7 +311,9 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
 
         while True:
             session_state.start_listening()
-            segment = _capture_speech_segment(p, noise_floor)
+            
+            # ⚡ USE STREAMING CAPTURE INSTEAD OF BUFFERED
+            segment = _capture_speech_segment_streaming(p, noise_floor, conn_manager)
             if segment is None:
                 conn_manager.send_data("CLEAR")
                 play_sfx(config["audio"]["session_end"], async_play=True)
@@ -263,16 +324,8 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
                 session_state.reset_to_idle("connection_lost")
                 break
 
-            if not conn_manager.send_data("CLEAR"):
-                session_state.reset_to_idle("clear_failed")
-                break
-
-            if not _send_audio_segment(conn_manager, segment.pcm):
-                session_state.reset_to_idle("upload_failed")
-                break
-
             session_state.processing_asr()
-            print("🚀 Sending COMMIT...")
+            print("🚀 Sending COMMIT to finalize transcription...")
             if not conn_manager.send_data("COMMIT", wait=True):
                 session_state.reset_to_idle("commit_failed")
                 break
