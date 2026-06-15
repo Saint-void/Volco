@@ -44,6 +44,15 @@ def manage_audio_bridge(action="stop"):
             stderr=subprocess.DEVNULL
         )
 
+# ==========================================
+# MANAGERS
+# ==========================================
+
+# Power State Trackers
+volco_sleeping = False
+ai_session_active = False
+_was_held_flag = False
+conn_manager = None
 
 # New Trigger Events for the threaded engine
 trigger_event = threading.Event()
@@ -52,6 +61,7 @@ trigger_type = "VOICE"
 # ==========================================
 # 🔘 HARDWARE BUTTON INTERRUPTS
 # ==========================================
+
 try:
     from gpiozero import Button #type: ignore
 
@@ -87,8 +97,9 @@ try:
             print("\n☀️ [POWER] Waking up Volco!")
             volco_sleeping = False
             threading.Thread(target=play_sfx, args=("./assets/sounds/boot.wav",)).start()
-            time.sleep(1)
+            time.sleep(2)
 
+            play_sfx("./assets/sounds/boot.wav")
             # 1. Turn the radio back on
             subprocess.run(["bluetoothctl", "power", "on"], stdout=subprocess.DEVNULL)
             threading.Thread(target=play_sfx, args=("./assets/sounds/bt_pairing.wav",)).start()
