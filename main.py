@@ -100,6 +100,7 @@ if not IS_WINDOWS:
                 threading.Thread(target=play_sfx, args=("./assets/sounds/boot.wav",)).start()
                 time.sleep(2)
 
+                play_sfx("./assets/sounds/boot.wav")
                 # 1. Turn the radio back on
                 subprocess.run(["bluetoothctl", "power", "on"], stdout=subprocess.DEVNULL)
                 threading.Thread(target=play_sfx, args=("./assets/sounds/bt_pairing.wav",)).start()
