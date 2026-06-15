@@ -90,36 +90,6 @@ def _play_response(p, conn_manager, session_state):
     pending_action_payload = None
     keep_session_open = False
 
-    def loading_sound_worker():
-        import wave
-        try:
-            wf = wave.open("./assets/sounds/ai_respond_loading.wav", "rb")
-            with suppress_alsa_stderr():
-                load_stream = p.open(
-                    format=p.get_format_from_width(wf.getsampwidth()),
-                    channels=wf.getnchannels(),
-                    rate=wf.getframerate(),
-                    output=True,
-                )
-            chunk_size = 1024
-            audio_data = wf.readframes(chunk_size)
-
-            while thinking_event.is_set():
-                if len(audio_data) == 0:
-                    wf.rewind()
-                    audio_data = wf.readframes(chunk_size)
-                load_stream.write(audio_data)
-                audio_data = wf.readframes(chunk_size)
-
-            load_stream.stop_stream()
-            load_stream.close()
-            wf.close()
-        except Exception:
-            pass
-
-    loading_thread = threading.Thread(target=loading_sound_worker, daemon=True)
-    loading_thread.start()
-
     with suppress_alsa_stderr():
         speaker_stream = p.open(
             format=pyaudio.paInt16,
