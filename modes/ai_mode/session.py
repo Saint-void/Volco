@@ -1,12 +1,14 @@
 import json
 import time
 import pyaudio
+import wave
 import threading
 import queue
 import platform
 import sys
 import select
 import audioop
+import io
 from core.volco_audio_engine import VolcoSpotifyEngine
 from config.config_manager import config
 from core.audio_io import play_sfx, print_audio_meter, suppress_alsa_stderr
@@ -163,9 +165,18 @@ def _play_response(p, conn_manager, session_state):
                         session_state.responding()
                         print("🤖 Volco Speaking...")
                     if voice_stream_active:
-                        stereo_data = audioop.tostereo(data, 2, 1, 1)
-                        # enqueue for playback writer
-                        play_queue.put(stereo_data)
+                        # Decode WAV file from server
+                        try:
+                            wav_io = io.BytesIO(data)
+                            with wave.open(wav_io, 'rb') as wav_file:
+                                n_frames = wav_file.getnframes()
+                                pcm_mono = wav_file.readframes(n_frames)
+                                # Convert mono int16 PCM to stereo
+                                stereo_data = audioop.tostereo(pcm_mono, 2, 1, 1)
+                                play_queue.put(stereo_data)
+                                print(f"🔊 [DEVICE] WAV decoded: {n_frames} frames -> stereo")
+                        except Exception as e:
+                            print(f"❌ [DEVICE] WAV decode error: {e}")
 
                 elif opcode == 1:
                     msg = data
