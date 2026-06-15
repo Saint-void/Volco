@@ -29,7 +29,7 @@ def is_button_pressed():
     return False
 
 
-def _send_audio_segment(conn_manager, pcm: bytes, chunk_size: int = 12000) -> bool:
+def _send_audio_segment(conn_manager, pcm: bytes, chunk_size: int = 24000) -> bool:
     for offset in range(0, len(pcm), chunk_size):
         if not conn_manager.send_data(pcm[offset:offset + chunk_size], wait=True):
             return False
