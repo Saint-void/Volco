@@ -2,6 +2,7 @@ import json
 import time
 import pyaudio
 import threading
+import queue
 import platform
 import sys
 import select
@@ -29,7 +30,7 @@ def is_button_pressed():
     return False
 
 
-def _send_audio_segment(conn_manager, pcm: bytes, chunk_size: int = 24000) -> bool:
+def _send_audio_segment(conn_manager, pcm: bytes, chunk_size: int = 12000) -> bool:
     for offset in range(0, len(pcm), chunk_size):
         if not conn_manager.send_data(pcm[offset:offset + chunk_size], wait=True):
             return False
@@ -93,6 +94,63 @@ def _play_response(p, conn_manager, session_state):
     voice_stream_active = True
     first_audio_received = False
 
+    # Playback buffering queue and writer thread to smooth jitter
+    play_queue = queue.Queue()
+    stop_playback = threading.Event()
+
+    def _playback_writer(stream, q, stop_evt, sample_rate=24000):
+        # Buffer until we have ~200ms of audio, then play in 20ms frames
+        initial_buffer_ms = 200
+        frame_ms = 20
+        bytes_per_sample = 2
+        channels = 2
+        bytes_per_frame = bytes_per_sample * channels
+        initial_bytes_needed = int(sample_rate * (initial_buffer_ms / 1000.0)) * bytes_per_frame
+        frame_bytes = int(sample_rate * (frame_ms / 1000.0)) * bytes_per_frame
+
+        buf = bytearray()
+        start_ts = time.time()
+
+        # Warm-up: collect initial buffer (bounded wait)
+        while len(buf) < initial_bytes_needed and not stop_evt.is_set():
+            try:
+                chunk = q.get(timeout=0.5)
+                buf.extend(chunk)
+            except queue.Empty:
+                # If we've waited >2s and still no buffer, start anyway
+                if time.time() - start_ts > 2.0:
+                    break
+                continue
+
+        # Playback loop
+        try:
+            while not stop_evt.is_set():
+                if len(buf) >= frame_bytes:
+                    to_write = bytes(buf[:frame_bytes])
+                    try:
+                        stream.write(to_write)
+                    except Exception as e:
+                        print(f"❌ Playback write error: {e}")
+                        break
+                    del buf[:frame_bytes]
+                else:
+                    try:
+                        chunk = q.get(timeout=0.1)
+                        buf.extend(chunk)
+                    except queue.Empty:
+                        # nothing to do, loop back
+                        continue
+        finally:
+            # Flush remaining small buffer
+            try:
+                if buf:
+                    stream.write(bytes(buf))
+            except Exception:
+                pass
+
+    writer_thread = threading.Thread(target=_playback_writer, args=(speaker_stream, play_queue, stop_playback), daemon=True)
+    writer_thread.start()
+
     try:
         while True:
             try:
@@ -106,7 +164,8 @@ def _play_response(p, conn_manager, session_state):
                         print("🤖 Volco Speaking...")
                     if voice_stream_active:
                         stereo_data = audioop.tostereo(data, 2, 1, 1)
-                        speaker_stream.write(stereo_data)
+                        # enqueue for playback writer
+                        play_queue.put(stereo_data)
 
                 elif opcode == 1:
                     msg = data
@@ -155,9 +214,22 @@ def _play_response(p, conn_manager, session_state):
     finally:
         thinking_event.clear()
 
+        # Stop playback writer thread and join
+        try:
+            stop_playback.set()
+            writer_thread.join(timeout=1.0)
+        except Exception:
+            pass
+
         if voice_stream_active:
-            speaker_stream.stop_stream()
-            speaker_stream.close()
+            try:
+                speaker_stream.stop_stream()
+            except Exception:
+                pass
+            try:
+                speaker_stream.close()
+            except Exception:
+                pass
 
     return keep_session_open, pending_action_payload
 
