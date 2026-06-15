@@ -44,16 +44,6 @@ def manage_audio_bridge(action="stop"):
             stderr=subprocess.DEVNULL
         )
 
-# ==========================================
-# 🔘 GLOBAL STATE & MANAGERS
-# ==========================================
-IS_WINDOWS = platform.system() == "Windows"
-
-# Power State Trackers
-volco_sleeping = False
-ai_session_active = False
-_was_held_flag = False
-conn_manager = None
 
 # New Trigger Events for the threaded engine
 trigger_event = threading.Event()
@@ -62,67 +52,65 @@ trigger_type = "VOICE"
 # ==========================================
 # 🔘 HARDWARE BUTTON INTERRUPTS
 # ==========================================
-if not IS_WINDOWS:
-    try:
-        from gpiozero import Button #type: ignore
+try:
+    from gpiozero import Button #type: ignore
 
-        volco_button = Button(17, bounce_time=0.1, hold_time=3.0)
+    volco_button = Button(17, bounce_time=0.1, hold_time=3.0)
 
-        def button_held():
-            """Fires exactly when the button has been held for 3 seconds."""
-            global _was_held_flag, volco_sleeping
-            _was_held_flag = True
+    def button_held():
+        """Fires exactly when the button has been held for 3 seconds."""
+        global _was_held_flag, volco_sleeping
+        _was_held_flag = True
 
-            if not volco_sleeping:
-                print("\n🌙 [POWER] 3-Second Hold Detected! Entering Deep Sleep...")
-                volco_sleeping = True
-                threading.Thread(target=play_sfx, args=("./assets/sounds/shutdown.wav",)).start()
+        if not volco_sleeping:
+            print("\n🌙 [POWER] 3-Second Hold Detected! Entering Deep Sleep...")
+            volco_sleeping = True
+            threading.Thread(target=play_sfx, args=("./assets/sounds/shutdown.wav",)).start()
 
-                # ⚡ 1. Kill the Spotify Standalone Client
-                spotify_hw.stop_client()
+            # ⚡ 1. Kill the Spotify Standalone Client
+            spotify_hw.stop_client()
 
-                # 2. Kill Bluetooth & Audio Bridge
-                manage_audio_bridge("stop")
-                subprocess.run(["bluetoothctl", "power", "off"], stdout=subprocess.DEVNULL)
+            # 2. Kill Bluetooth & Audio Bridge
+            manage_audio_bridge("stop")
+            subprocess.run(["bluetoothctl", "power", "off"], stdout=subprocess.DEVNULL)
 
 
-        def button_released():
-            """Fires when you let go of the button."""
-            global _was_held_flag, volco_sleeping, ai_session_active, trigger_event, trigger_type
+    def button_released():
+        """Fires when you let go of the button."""
+        global _was_held_flag, volco_sleeping, ai_session_active, trigger_event, trigger_type
 
-            if _was_held_flag:
-                _was_held_flag = False
-                return
+        if _was_held_flag:
+            _was_held_flag = False
+            return
 
-            if volco_sleeping:
-                print("\n☀️ [POWER] Waking up Volco!")
-                volco_sleeping = False
-                threading.Thread(target=play_sfx, args=("./assets/sounds/boot.wav",)).start()
-                time.sleep(2)
+        if volco_sleeping:
+            print("\n☀️ [POWER] Waking up Volco!")
+            volco_sleeping = False
+            threading.Thread(target=play_sfx, args=("./assets/sounds/boot.wav",)).start()
+            time.sleep(1)
 
-                play_sfx("./assets/sounds/boot.wav")
-                # 1. Turn the radio back on
-                subprocess.run(["bluetoothctl", "power", "on"], stdout=subprocess.DEVNULL)
-                threading.Thread(target=play_sfx, args=("./assets/sounds/bt_pairing.wav",)).start()
+            # 1. Turn the radio back on
+            subprocess.run(["bluetoothctl", "power", "on"], stdout=subprocess.DEVNULL)
+            threading.Thread(target=play_sfx, args=("./assets/sounds/bt_pairing.wav",)).start()
 
-                # ⚡ 2. Boot the Spotify engine back up! (It auto-connects to the cache)
-                print("🎵 [POWER] Starting Standalone Spotify Client...")
-                spotify_hw.start_client()
+            # ⚡ 2. Boot the Spotify engine back up! (It auto-connects to the cache)
+            print("🎵 [POWER] Starting Standalone Spotify Client...")
+            spotify_hw.start_client()
 
-            elif ai_session_active:
-                print("\n🔘 [HARDWARE] AI already active; button press ignored.")
+        elif ai_session_active:
+            print("\n🔘 [HARDWARE] AI already active; button press ignored.")
 
-            else:
-                print("\n🚨 [HARDWARE INTERRUPT] Single click! Triggering AI...")
-                trigger_type = "BUTTON"
-                trigger_event.set()
+        else:
+            print("\n🚨 [HARDWARE INTERRUPT] Single click! Triggering AI...")
+            trigger_type = "BUTTON"
+            trigger_event.set()
 
-        volco_button.when_held = button_held
-        volco_button.when_released = button_released
-        print("🔘 [HARDWARE] Smart Button (Click/Hold) initialized on GPIO 17!")
+    volco_button.when_held = button_held
+    volco_button.when_released = button_released
+    print("🔘 [HARDWARE] Smart Button (Click/Hold) initialized on GPIO 17!")
 
-    except ImportError:
-        print("⚠️ [HARDWARE] gpiozero not found! Button disabled.")
+except ImportError:
+    print("⚠️ [HARDWARE] gpiozero not found! Button disabled.")
 
 
 def wake_word_worker(wake_engine):

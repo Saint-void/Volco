@@ -17,24 +17,16 @@ from core.state_machine import VoiceSessionStateMachine
 spotify = VolcoSpotifyEngine()
 assistant_processor = get_assistant_processor()
 
-# ⚡ THE SMART OS CHECKER
-IS_WINDOWS = platform.system() == "Windows"
-if IS_WINDOWS:
-    import keyboard
-else:
-    import select
+import select
 
 def is_button_pressed():
     """Checks for Space/Shift on Windows, or the 'Enter' key on Linux."""
-    if IS_WINDOWS:
-        return keyboard.is_pressed("space") or keyboard.is_pressed("right shift")  # type: ignore
-    else:
         # Non-blocking check to see if 'Enter' was pressed in the Linux terminal
-        i, _, _ = select.select([sys.stdin], [], [], 0.0)
-        if i:
-            sys.stdin.readline() # Clear the buffer
-            return True
-        return False
+    i, _, _ = select.select([sys.stdin], [], [], 0.0)
+    if i:
+        sys.stdin.readline() # Clear the buffer
+        return True
+    return False
 
 
 def _send_audio_segment(conn_manager, pcm: bytes, chunk_size: int = 12000) -> bool:
