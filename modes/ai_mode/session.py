@@ -86,7 +86,7 @@ def _play_response(p, conn_manager, session_state):
         speaker_stream = p.open(
             format=pyaudio.paInt16,
             channels=2,
-            rate=22050,
+            rate=24000,
             output=True,
         )
 
