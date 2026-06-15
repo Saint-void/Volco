@@ -33,7 +33,6 @@ def _bluetooth_background_manager():
     else:
         # If nobody is connected, open the vault doors for pairing
         print("\n🔓 [BT MODE] No known devices found. Entering Pairing Mode...")
-        play_sfx("./assets/sounds/bt_pairing.wav",)
         time.sleep(2) # Let the sound play before enabling pairing
     
         subprocess.run(["bluetoothctl", "discoverable", "on"], stdout=subprocess.DEVNULL)

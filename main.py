@@ -101,7 +101,6 @@ try:
 
             # 1. Turn the radio back on
             subprocess.run(["bluetoothctl", "power", "on"], stdout=subprocess.DEVNULL)
-            threading.Thread(target=play_sfx, args=("./assets/sounds/bt_pairing.wav",)).start()
 
             # ⚡ 2. Boot the Spotify engine back up! (It auto-connects to the cache)
             print("🎵 [POWER] Starting Standalone Spotify Client...")
