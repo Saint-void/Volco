@@ -10,12 +10,11 @@ from core.volco_audio_engine import VolcoSpotifyEngine
 from config.config_manager import config
 from core.audio_io import play_sfx, print_audio_meter, suppress_alsa_stderr
 from core.audio_pipeline import AudioPipelineConfig, EndpointingAudioPipeline
-from core.assistant_processor import get_assistant_processor
+# local intent handling removed; assistant processor disabled
 from core.state_machine import VoiceSessionStateMachine
 
 # Initialize the engine once
 spotify = VolcoSpotifyEngine()
-assistant_processor = get_assistant_processor()
 
 # ⚡ THE SMART OS CHECKER
 IS_WINDOWS = platform.system() == "Windows"
@@ -135,17 +134,7 @@ def _play_response(p, conn_manager, session_state):
                         try:
                             payload = json.loads(msg)
                             action = payload.get("action")
-                            if action == "local_intent_request":
-                                result = assistant_processor.process_user_input(
-                                    payload.get("text", ""),
-                                    user_id=payload.get("user_id", "default"),
-                                )
-                                conn_manager.send_data(json.dumps({
-                                    "action": "local_intent_result",
-                                    "request_id": payload.get("request_id"),
-                                    "result": result,
-                                }), wait=True)
-                                continue
+                            # local intent handling removed; always rely on server LLM
                             if payload.get("keep_session_open") is True or payload.get("continue_session") is True:
                                 keep_session_open = True
                             if payload.get("end_session") is True:
