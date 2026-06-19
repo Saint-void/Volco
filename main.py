@@ -154,6 +154,8 @@ def wake_word_worker(wake_engine):
             print(f"🎯 [WAKE THREAD] Match found! Confidence: {confidence:.2f}")
             trigger_type = "VOICE"
             trigger_event.set()
+            # 1 --- THE WAKE SOUND (Now Async!) ---
+            play_sfx(config["audio"]["sfx_wake"], async_play=True)
 
 # =============================
 # 🚀 THE DISPATCHER (MAIN OS)
@@ -263,10 +265,8 @@ def main():
                         continue
                 
                 try:
-                    # 1️⃣ --- THE WAKE SOUND (Now Async!) ---
-                    play_sfx(config["audio"]["sfx_wake"], async_play=True)
 
-                    # 2️⃣ --- THE AI TAKEOVER ---
+                    # --- THE AI TAKEOVER ---
                     start_ai_session(wake_engine, conn_manager, current_noise_floor)
                     
                     session_done.set()
