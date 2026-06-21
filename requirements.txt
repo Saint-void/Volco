@@ -16,5 +16,5 @@ bluezero
 gpiozero
 pyserial
 
-# Optional keyboard fallback used during development/testing
-keyboard
+# Voice cloning and text-to-speech
+livekit-wakeword

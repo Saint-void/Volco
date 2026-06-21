@@ -1,7 +1,8 @@
+import asyncio
 import time
 import numpy as np
 import pyaudio
-from openwakeword.model import Model
+from livekit.wakeword import WakeWordModel  # 🔄 Updated import
 from config.config_manager import config
 from core.audio_io import suppress_alsa_stderr
 
@@ -13,11 +14,14 @@ class WakeWordEngine:
             self.pa = pyaudio.PyAudio()
         self.audio_stream = None
         self.is_functional = False
-        self.chunk_size = 1280  # openWakeWord default (80ms)
+        
+        # ⚡ livekit-wakeword operates on 10ms-20ms chunks. 
+        # PyAudio chunk of 320 at 16000Hz = 20ms of audio (livekit requirement)
+        self.chunk_size = 320  
         self.sample_rate = 16000
         
         # Pull threshold once at init
-        self.threshold = config.get("openwakeword", {}).get("threshold", 0.4)
+        self.threshold = config.get("wakeword", {}).get("threshold", 0.4)
         
         # Anti-Duplicate / Debounce state
         self.last_activation_time = 0
@@ -29,25 +33,19 @@ class WakeWordEngine:
         self._suppress_until = 0
 
         try:
-            print("🎧 Initializing openWakeWord Engine (Optimized Ensemble)...")
+            print("🎧 Initializing LiveKit WakeWord Engine (Conv-Attention)...")
             
-            # Ensure base models are present
-            import openwakeword
-            openwakeword.utils.download_models()
+            # Read paths (Ensure paths point to valid livekit .onnx files!)
+            model_paths = config["wakeword"].get("model_paths", ["hey_vella.onnx"])
             
-            model_paths = config["openwakeword"].get("model_paths", ["alexa"])
-            
-            self.model = Model(
-                wakeword_models=model_paths,
-                inference_framework="onnx",
-                vad_threshold=0.5  # ⚡ Only process if 50% sure it's human speech
-            )
+            # Initialize LiveKit model
+            self.model = WakeWordModel(models=model_paths)
             
             self.is_functional = True
-            print(f"✅ Wake Word Engine Ready (Models: {model_paths} | Threshold: {self.threshold})")
+            print(f"✅ LiveKit Wake Word Engine Ready (Models: {model_paths} | Threshold: {self.threshold})")
             
         except Exception as e:
-            print(f"\n⚠️ [WARNING] Wake Word Engine Failed to Load.")
+            print(f"\n⚠️ [WARNING] LiveKit Wake Word Engine Failed to Load.")
             print(f"   -> Details: {e}")
             self.is_functional = False
 
@@ -76,28 +74,26 @@ class WakeWordEngine:
         self._quiet_frames = 0 if require_rearm else self.rearm_quiet_frames
         self._armed = not require_rearm
         self._suppress_until = time.monotonic() + suppress_seconds
-
-        reset = getattr(self.model, "reset", None)
-        if callable(reset):
-            try:
-                reset()
-            except Exception:
-                pass
+        
+        # 🔄 LiveKit resets state implicitly inside its context stream.
 
     def read_and_process(self):
-        """Reads audio and checks for the wake word."""
+        """Reads audio and checks for the wake word (Synchronous Wrapper)."""
         if not self.is_functional or self.model is None or self.audio_stream is None:
             time.sleep(0.1) 
             return False, 0
 
         try:
+            # Read 16-bit PCM data from microphone
             pcm = self.audio_stream.read(self.chunk_size, exception_on_overflow=False)
-            audio_data = np.frombuffer(pcm, dtype=np.int16)
             
-            prediction = self.model.predict(audio_data)
+            # 🔄 LiveKit predict expects a standard bytes object or raw array, 
+            # and outputs a structural list of result objects, not a dictionary.
+            predictions = self.model.predict(pcm)
             
-            if prediction:
-                confidence = max(prediction.values())
+            if predictions:
+                # Extract highest confidence from the predictions array
+                confidence = max((getattr(p, "confidence", 0.0) for p in predictions), default=0.0)
 
                 if confidence <= self.rearm_threshold:
                     self._quiet_frames += 1
@@ -112,7 +108,6 @@ class WakeWordEngine:
                 # Check threshold
                 if self._armed and confidence >= self.threshold:
                     current_time = time.time()
-                    # ⚡ Check cooldown to prevent duplicate triggers
                     if (current_time - self.last_activation_time) > self.activation_cooldown:
                         self.last_activation_time = current_time
                         self._armed = False

@@ -1,0 +1,12 @@
+model_name: hey_nova
+target_phrases:
+  - "hey vella"      # ← change this to your wake word
+
+n_samples: 10000
+
+model:
+  model_type: conv_attention   # best accuracy
+  model_size: small
+  steps: 50000
+
+target_fp_per_hour: 0.5  
