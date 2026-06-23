@@ -9,7 +9,6 @@ from core.audio_io import play_sfx
 
 # ⚡ 2. PLAY THE BOOT SOUND INSTANTLY!
 print("\n--- VOLCO OS INITIALIZING ---")
-play_sfx("./assets/sounds/boot.wav")
 
 # ⚡ 3. NOW LOAD THE HEAVY AI LIBRARIES IN THE BACKGROUND
 from config.config_manager import config
