@@ -11,7 +11,7 @@ from core.audio_io import play_sfx
 
 def get_current_user_id():
     """Reads Volco's memory drive to see who currently owns the headset."""
-    memory_path = "core/current_user.txt"
+    memory_path = os.path.join(os.path.dirname(__file__), "current_user.txt")
     if os.path.exists(memory_path):
         with open(memory_path, "r") as f:
             user_id = f.read().strip()
@@ -193,12 +193,13 @@ class ConnectionManager:
         while self.is_running:
             try:
                 data = self.receive_queue.get(timeout=0.1)
-                if isinstance(data, bytes): 
+                if isinstance(data, bytes):
                     return (2, data)
-                else: 
+                else:
                     return (1, data)
             except queue.Empty:
-                continue 
+                time.sleep(0.02)  # ⚡ Prevents tight-loop CPU spike on disconnect
+                continue
         raise Exception("Connection closed")
 
     def close(self):

@@ -151,10 +151,11 @@ def _play_response(p, conn_manager, session_state):
                 break
     finally:
         thinking_event.clear()
-
-        if voice_stream_active:
+        try:
             speaker_stream.stop_stream()
             speaker_stream.close()
+        except Exception as e:
+            print(f"⚠️ [SESSION] Speaker stream close error: {e}")
 
     return keep_session_open, pending_action_payload
 
@@ -256,4 +257,7 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
         print(f"⚠️ Session Error: {e}")
         session_state.reset_to_idle("error")
     finally:
-        p.terminate()
+        try:
+            p.terminate()
+        except Exception as e:
+            print(f"⚠️ [SESSION] PyAudio terminate error: {e}")
