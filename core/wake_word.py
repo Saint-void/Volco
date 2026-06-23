@@ -13,7 +13,7 @@ class WakeWordEngine:
             self.pa = pyaudio.PyAudio()
         self.audio_stream = None
         self.is_functional = False
-        self.chunk_size = 1280  # openWakeWord default (80ms)
+        self.chunk_size = 1280  
         self.sample_rate = 16000
         
         # Pull threshold once at init
