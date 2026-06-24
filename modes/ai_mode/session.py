@@ -4,6 +4,7 @@ import queue
 import time
 import wave
 import pyaudio
+import audioop
 import threading
 import platform
 import sys
@@ -125,8 +126,24 @@ def _play_response(p, conn_manager, session_state):
                             sw       = wf.getsampwidth()
                             channels = wf.getnchannels()
                             rate     = wf.getframerate()
+
+                            # Ensure output device supports requested channels.
+                            output_idx = config["audio"].get("output_device_index")
+                            try:
+                                dev_info = p.get_device_info_by_index(output_idx) if output_idx is not None else p.get_default_output_device_info()
+                                dev_max_channels = int(dev_info.get("maxOutputChannels", channels))
+                            except Exception:
+                                dev_max_channels = channels
+
+                            out_channels = channels
+                            need_conversion = False
+                            if dev_max_channels and channels > dev_max_channels:
+                                # downmix to device's max channels (commonly from 2->1)
+                                out_channels = dev_max_channels
+                                need_conversion = True
+
                             fmt      = p.get_format_from_width(sw)
-                            params   = (fmt, channels, rate)
+                            params   = (fmt, out_channels, rate)
 
                             # (Re)open only when the format actually changes.
                             if stream is None or params != stream_params:
@@ -137,13 +154,13 @@ def _play_response(p, conn_manager, session_state):
                                 output_idx = config["audio"].get("output_device_index")
                                 with suppress_alsa_stderr():
                                     stream = p.open(
-                                        format=fmt,
-                                        channels=channels,
-                                        rate=rate,
-                                        output=True,
-                                        output_device_index=output_idx,
-                                        frames_per_buffer=2048,
-                                    )
+                                            format=fmt,
+                                            channels=out_channels,
+                                            rate=rate,
+                                            output=True,
+                                            output_device_index=output_idx,
+                                            frames_per_buffer=2048,
+                                        )
                                 stream_params = params
 
                                 # ~10 ms of silence primes the DAC so the
@@ -153,6 +170,17 @@ def _play_response(p, conn_manager, session_state):
                             # Feed the sentence PCM into the already-warm stream.
                             pcm = wf.readframes(2048)
                             while pcm:
+                                if need_conversion and out_channels != channels:
+                                    try:
+                                        # Use audioop to convert channels without external deps
+                                        if out_channels == 1 and channels == 2:
+                                            pcm = audioop.tomono(pcm, sw, 0.5, 0.5)
+                                        elif out_channels == 2 and channels == 1:
+                                            pcm = audioop.tostereo(pcm, sw, 1, 1)
+                                    except Exception:
+                                        # Fallback: write original and let the device/error occur
+                                        pass
+
                                 stream.write(pcm)
                                 pcm = wf.readframes(2048)
 
