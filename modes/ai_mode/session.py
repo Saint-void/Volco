@@ -85,41 +85,6 @@ def _capture_speech_segment(p, noise_floor):
         mic_stream.close()
 
 
-def _play_wav_bytes(p, wav_bytes: bytes) -> None:
-    """Decodes and plays a complete WAV file from an in-memory bytes buffer.
-
-    Opens a fresh PyAudio output stream sized to match the WAV file's own
-    sample width, channel count, and frame rate, so the server is free to
-    change those parameters between sentences without any reconfiguration on
-    our side.
-    """
-    try:
-        with io.BytesIO(wav_bytes) as buf:
-            with wave.open(buf, 'rb') as wf:
-                fmt      = p.get_format_from_width(wf.getsampwidth())
-                channels = wf.getnchannels()
-                rate     = wf.getframerate()
-
-                with suppress_alsa_stderr():
-                    stream = p.open(
-                        format=fmt,
-                        channels=channels,
-                        rate=rate,
-                        output=True,
-                    )
-                try:
-                    chunk = 1024
-                    pcm = wf.readframes(chunk)
-                    while pcm:
-                        stream.write(pcm)
-                        pcm = wf.readframes(chunk)
-                finally:
-                    stream.stop_stream()
-                    stream.close()
-    except Exception as e:
-        print(f"⚠️ WAV playback error: {e}")
-
-
 def _play_response(p, conn_manager, session_state):
     pending_action_payload = None
     # Default to True: END_OF_RESPONSE alone means "your turn", not "goodbye".
@@ -132,14 +97,77 @@ def _play_response(p, conn_manager, session_state):
     wav_queue: queue.Queue = queue.Queue()
 
     def playback_worker():
-        """Plays WAV clips in arrival order, one at a time."""
-        while True:
-            item = wav_queue.get()
-            if item is None:
+        """
+        Plays all WAV sentences through ONE persistent PyAudio output stream.
+
+        The original per-clip open/close pattern forced ALSA to cold-init the
+        DAC hardware on every sentence, which produced a click/pop at the start
+        of each clip.  Keeping the stream open across sentences eliminates that
+        entirely.  The stream is only reopened if the WAV format changes between
+        sentences (rare in practice with a single TTS engine).
+
+        A short silence burst is written immediately after opening so the DAC
+        and ALSA ring buffer have time to settle before the first real sample.
+        """
+        stream       = None
+        stream_params = None          # (fmt, channels, rate)
+
+        try:
+            while True:
+                item = wav_queue.get()
+                if item is None:
+                    wav_queue.task_done()
+                    break
+
+                try:
+                    with io.BytesIO(item) as buf:
+                        with wave.open(buf, 'rb') as wf:
+                            sw       = wf.getsampwidth()
+                            channels = wf.getnchannels()
+                            rate     = wf.getframerate()
+                            fmt      = p.get_format_from_width(sw)
+                            params   = (fmt, channels, rate)
+
+                            # (Re)open only when the format actually changes.
+                            if stream is None or params != stream_params:
+                                if stream is not None:
+                                    stream.stop_stream()
+                                    stream.close()
+
+                                output_idx = config["audio"].get("output_device_index")
+                                with suppress_alsa_stderr():
+                                    stream = p.open(
+                                        format=fmt,
+                                        channels=channels,
+                                        rate=rate,
+                                        output=True,
+                                        output_device_index=output_idx,
+                                        frames_per_buffer=2048,
+                                    )
+                                stream_params = params
+
+                                # ~10 ms of silence primes the DAC so the
+                                # hardware has settled before real audio starts.
+                                stream.write(b'\x00' * sw * channels * (rate // 100))
+
+                            # Feed the sentence PCM into the already-warm stream.
+                            pcm = wf.readframes(2048)
+                            while pcm:
+                                stream.write(pcm)
+                                pcm = wf.readframes(2048)
+
+                except Exception as e:
+                    print(f"⚠️ WAV playback error: {e}")
+
                 wav_queue.task_done()
-                break
-            _play_wav_bytes(p, item)
-            wav_queue.task_done()
+
+        finally:
+            if stream is not None:
+                try:
+                    stream.stop_stream()
+                    stream.close()
+                except Exception:
+                    pass
 
     playback_thread = threading.Thread(target=playback_worker, daemon=True)
     playback_thread.start()
