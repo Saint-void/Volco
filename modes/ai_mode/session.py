@@ -3,6 +3,7 @@ import json
 import queue
 import time
 import wave
+from librosa import stream
 import pyaudio
 import audioop
 import threading
@@ -122,10 +123,17 @@ def _play_response(p, conn_manager, session_state):
 
                 try:
                     with io.BytesIO(item) as buf:
+
                         with wave.open(buf, 'rb') as wf:
                             sw       = wf.getsampwidth()
                             channels = wf.getnchannels()
                             rate     = wf.getframerate()
+
+                            print(
+                                f"🎵 WAV INFO | channels={channels} "
+                                f"rate={rate} "
+                                f"sampwidth={sw}"
+)
 
                             # Ensure output device supports requested channels.
                             output_idx = config["audio"].get("output_device_index")
@@ -165,7 +173,7 @@ def _play_response(p, conn_manager, session_state):
 
                                 # ~10 ms of silence primes the DAC so the
                                 # hardware has settled before real audio starts.
-                                stream.write(b'\x00' * sw * channels * (rate // 100))
+                                stream.write(b'\x00' * sw * out_channels * (rate // 100))
 
                             # Feed the sentence PCM into the already-warm stream.
                             pcm = wf.readframes(2048)
