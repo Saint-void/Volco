@@ -122,7 +122,9 @@ def _play_wav_bytes(p, wav_bytes: bytes) -> None:
 
 def _play_response(p, conn_manager, session_state):
     pending_action_payload = None
-    keep_session_open = False
+    # Default to True: END_OF_RESPONSE alone means "your turn", not "goodbye".
+    # Only explicit signals (END_SESSION, NO_SPEECH, JSON end_session) close the session.
+    keep_session_open = True
     first_audio_received = False
 
     # Queue that carries complete WAV buffers to the playback thread.
@@ -162,6 +164,7 @@ def _play_response(p, conn_manager, session_state):
                 elif opcode == 1:
                     msg = data
                     if msg == "NO_SPEECH":
+                        keep_session_open = False
                         print("\n🔇 Server rejected segment as no speech.")
                         break
                     if msg == "END_OF_RESPONSE":
