@@ -1,11 +1,13 @@
+import io
 import json
+import queue
 import time
+import wave
 import pyaudio
 import threading
 import platform
 import sys
 import select
-import audioop
 from core.volco_audio_engine import VolcoSpotifyEngine
 from config.config_manager import config
 from core.audio_io import play_sfx, print_audio_meter, suppress_alsa_stderr
@@ -83,22 +85,62 @@ def _capture_speech_segment(p, noise_floor):
         mic_stream.close()
 
 
+def _play_wav_bytes(p, wav_bytes: bytes) -> None:
+    """Decodes and plays a complete WAV file from an in-memory bytes buffer.
+
+    Opens a fresh PyAudio output stream sized to match the WAV file's own
+    sample width, channel count, and frame rate, so the server is free to
+    change those parameters between sentences without any reconfiguration on
+    our side.
+    """
+    try:
+        with io.BytesIO(wav_bytes) as buf:
+            with wave.open(buf, 'rb') as wf:
+                fmt      = p.get_format_from_width(wf.getsampwidth())
+                channels = wf.getnchannels()
+                rate     = wf.getframerate()
+
+                with suppress_alsa_stderr():
+                    stream = p.open(
+                        format=fmt,
+                        channels=channels,
+                        rate=rate,
+                        output=True,
+                    )
+                try:
+                    chunk = 1024
+                    pcm = wf.readframes(chunk)
+                    while pcm:
+                        stream.write(pcm)
+                        pcm = wf.readframes(chunk)
+                finally:
+                    stream.stop_stream()
+                    stream.close()
+    except Exception as e:
+        print(f"⚠️ WAV playback error: {e}")
+
+
 def _play_response(p, conn_manager, session_state):
-    thinking_event = threading.Event()
-    thinking_event.set()
     pending_action_payload = None
     keep_session_open = False
-
-    with suppress_alsa_stderr():
-        speaker_stream = p.open(
-            format=pyaudio.paInt16,
-            channels=2,
-            rate=22050,
-            output=True,
-        )
-
-    voice_stream_active = True
     first_audio_received = False
+
+    # Queue that carries complete WAV buffers to the playback thread.
+    # None is the sentinel that tells the worker to stop after draining.
+    wav_queue: queue.Queue = queue.Queue()
+
+    def playback_worker():
+        """Plays WAV clips in arrival order, one at a time."""
+        while True:
+            item = wav_queue.get()
+            if item is None:
+                wav_queue.task_done()
+                break
+            _play_wav_bytes(p, item)
+            wav_queue.task_done()
+
+    playback_thread = threading.Thread(target=playback_worker, daemon=True)
+    playback_thread.start()
 
     try:
         while True:
@@ -106,19 +148,20 @@ def _play_response(p, conn_manager, session_state):
                 opcode, data = conn_manager.recv_data()
 
                 if opcode == 2:
-                    if not first_audio_received:
-                        first_audio_received = True
-                        thinking_event.clear()
-                        session_state.responding()
-                        print("🤖 Volco Speaking...")
-                    if voice_stream_active:
-                        stereo_data = audioop.tostereo(data, 2, 1, 1)
-                        speaker_stream.write(stereo_data)
+                    # All binary messages from the server are now complete WAV
+                    # files.  Confirm the RIFF header before queuing.
+                    if len(data) >= 4 and data[:4] == b'RIFF':
+                        if not first_audio_received:
+                            first_audio_received = True
+                            session_state.responding()
+                            print("🤖 Volco Speaking...")
+                        wav_queue.put(bytes(data))
+                    # Non-RIFF binary is unexpected under the new protocol;
+                    # silently ignore rather than crash.
 
                 elif opcode == 1:
                     msg = data
                     if msg == "NO_SPEECH":
-                        thinking_event.clear()
                         print("\n🔇 Server rejected segment as no speech.")
                         break
                     if msg == "END_OF_RESPONSE":
@@ -150,12 +193,10 @@ def _play_response(p, conn_manager, session_state):
                 keep_session_open = False
                 break
     finally:
-        thinking_event.clear()
-        try:
-            speaker_stream.stop_stream()
-            speaker_stream.close()
-        except Exception as e:
-            print(f"⚠️ [SESSION] Speaker stream close error: {e}")
+        # Send the sentinel so the worker exits after finishing whatever is
+        # already in the queue, then block until playback is truly done.
+        wav_queue.put(None)
+        playback_thread.join(timeout=30)
 
     return keep_session_open, pending_action_payload
 
@@ -257,7 +298,4 @@ def start_ai_session(wake_engine, conn_manager, noise_floor):
         print(f"⚠️ Session Error: {e}")
         session_state.reset_to_idle("error")
     finally:
-        try:
-            p.terminate()
-        except Exception as e:
-            print(f"⚠️ [SESSION] PyAudio terminate error: {e}")
+        p.terminate()
