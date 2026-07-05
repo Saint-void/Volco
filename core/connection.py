@@ -11,6 +11,10 @@ from core.audio_io import play_sfx
 
 def get_current_user_id():
     """Reads Volco's memory drive to see who currently owns the headset."""
+    env_user_id = os.environ.get("VOLCO_USER_ID", "").strip()
+    if env_user_id:
+        return env_user_id
+
     memory_path = os.path.join(os.path.dirname(__file__), "current_user.txt")
     if os.path.exists(memory_path):
         with open(memory_path, "r") as f:

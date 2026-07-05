@@ -3,15 +3,16 @@ import sys
 import time
 import audioop
 import pyaudio
-import platform
 import subprocess
+import shutil
 from contextlib import contextmanager
 from config.config_manager import config
+from core.platform_support import is_linux, is_macos, is_windows
 
 @contextmanager
 def suppress_alsa_stderr():
     """Temporarily hides noisy ALSA/PortAudio probing logs on Linux."""
-    if platform.system() == "Windows" or not config["audio"].get("suppress_alsa_warnings", True):
+    if not is_linux() or not config["audio"].get("suppress_alsa_warnings", True):
         yield
         return
 
@@ -32,7 +33,7 @@ def play_sfx(filename, async_play=False):
         return
         
     try:
-        if platform.system() == "Windows":
+        if is_windows():
             import winsound
             flags = winsound.SND_FILENAME   
             if async_play:
@@ -42,14 +43,40 @@ def play_sfx(filename, async_play=False):
             flags |= winsound.SND_NODEFAULT 
             
             winsound.PlaySound(filename, flags)
-        else:
-            # Future-proofed for your Raspberry Pi (Linux)
+        elif is_macos():
+            if shutil.which("afplay") is None:
+                print("⚠️ SFX skipped: afplay not available on this Mac.")
+                return
+            if async_play:
+                subprocess.Popen(["afplay", filename], stderr=subprocess.DEVNULL)
+            else:
+                subprocess.run(["afplay", filename], stderr=subprocess.DEVNULL)
+        elif is_linux():
+            if shutil.which("aplay") is None:
+                print("⚠️ SFX skipped: aplay not available on this Linux system.")
+                return
             if async_play:
                 subprocess.Popen(["aplay", "-q", filename], stderr=subprocess.DEVNULL)
             else:
                 subprocess.run(["aplay", "-q", filename], stderr=subprocess.DEVNULL)
+        else:
+            print("⚠️ SFX skipped: unsupported platform audio player.")
     except Exception as e:
         print(f"⚠️ SFX Error: {e}")
+
+
+def get_output_device_index():
+    override = os.environ.get("VOLCO_OUTPUT_DEVICE_INDEX")
+    if override not in (None, ""):
+        try:
+            return int(override)
+        except ValueError:
+            print(f"⚠️ Invalid VOLCO_OUTPUT_DEVICE_INDEX: {override}")
+
+    if is_macos():
+        return None
+
+    return config["audio"].get("output_device_index")
 
 def print_audio_meter(volume, threshold, is_active, status_text="LISTENING"):
     """Displays the live visual audio meter in the terminal."""

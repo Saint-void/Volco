@@ -1,7 +1,6 @@
 import json
 import os
-from bluezero import peripheral
-from bluezero import adapter  # ⚡ NEW IMPORT 
+from core.platform_support import can_use_bluez, platform_label
 
 # ⚡ MUST MATCH THE REACT APP EXACTLY
 SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0'
@@ -33,6 +32,17 @@ def on_write(value, options):
         print(f"❌ Failed to parse data: {e}")
 
 def main():
+    if not can_use_bluez():
+        print(f"📡 BLE provisioning server is unavailable on {platform_label()}: BlueZ is required.")
+        return
+
+    try:
+        from bluezero import peripheral
+        from bluezero import adapter
+    except ImportError as e:
+        print(f"📡 BLE provisioning server unavailable: {e}")
+        return
+
     print("📡 Starting Volco BLE Provisioning Server...")
     
     # ⚡ THE FIX: Automatically find the Pi's Bluetooth MAC Address

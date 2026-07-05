@@ -3,7 +3,6 @@ import json
 import queue
 import time
 import wave
-from librosa import stream
 import pyaudio
 import audioop
 import threading
@@ -12,7 +11,7 @@ import sys
 import select
 from core.volco_audio_engine import VolcoSpotifyEngine
 from config.config_manager import config
-from core.audio_io import play_sfx, print_audio_meter, suppress_alsa_stderr
+from core.audio_io import get_output_device_index, play_sfx, print_audio_meter, suppress_alsa_stderr
 from core.audio_pipeline import AudioPipelineConfig, EndpointingAudioPipeline
 # local intent handling removed; assistant processor disabled
 from core.state_machine import VoiceSessionStateMachine
@@ -136,7 +135,7 @@ def _play_response(p, conn_manager, session_state):
 )
 
                             # Ensure output device supports requested channels.
-                            output_idx = config["audio"].get("output_device_index")
+                            output_idx = get_output_device_index()
                             try:
                                 dev_info = p.get_device_info_by_index(output_idx) if output_idx is not None else p.get_default_output_device_info()
                                 dev_max_channels = int(dev_info.get("maxOutputChannels", channels))
@@ -159,7 +158,7 @@ def _play_response(p, conn_manager, session_state):
                                     stream.stop_stream()
                                     stream.close()
 
-                                output_idx = config["audio"].get("output_device_index")
+                                output_idx = get_output_device_index()
                                 with suppress_alsa_stderr():
                                     stream = p.open(
                                             format=fmt,

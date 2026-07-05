@@ -1,78 +1,102 @@
-import subprocess
 import time
 import threading
 from core.audio_io import play_sfx
+from core.platform_support import can_use_bluez, is_macos, platform_label, run_quiet
+
+
+def _btctl(*args, capture_output=False):
+    return run_quiet(["bluetoothctl", *args], capture_output=capture_output)
+
+
+def set_bluetooth_power(enabled):
+    if not can_use_bluez():
+        return False
+    state = "on" if enabled else "off"
+    _btctl("power", state)
+    return True
+
+
+def _connected_macs():
+    result = _btctl("devices", "Connected", capture_output=True)
+    if result is None:
+        return []
+    return [
+        line.split()[1]
+        for line in result.stdout.strip().split("\n")
+        if line.startswith("Device") and len(line.split()) >= 2
+    ]
+
+
+def _set_pairing_open(enabled):
+    state = "on" if enabled else "off"
+    _btctl("discoverable", state)
+    _btctl("pairable", state)
+
+
+def _prepare_bluez_adapter():
+    set_bluetooth_power(True)
+    _btctl("agent", "NoInputNoOutput")
+    _btctl("default-agent")
+    _btctl("system-alias", "Volco")
+
 
 def _bluetooth_background_manager():
     """Smart Vault: Handles visibility, auto-connections, and intruder kicking."""
     locked_device = None
 
-    # 1. Turn on the antenna
-    subprocess.run(["bluetoothctl", "power", "on"], stdout=subprocess.DEVNULL)
-    
-    # ⚡ THE FIX: Tell Linux to STOP asking for PINs permanently
-    # This sets the "NoInputNoOutput" mode so it "Just Works"
-    subprocess.run(["bluetoothctl", "agent", "NoInputNoOutput"], stdout=subprocess.DEVNULL)
-    subprocess.run(["bluetoothctl", "default-agent"], stdout=subprocess.DEVNULL)
-    
-    # Optional: Set the broadcast name so your phone sees "Volco Headset"
-    subprocess.run(["bluetoothctl", "system-alias", "Volco"], stdout=subprocess.DEVNULL)
+    _prepare_bluez_adapter()
+    time.sleep(1)
 
-    time.sleep(1) 
-
-    # 2. Initial Boot Check
-    connected_out = subprocess.run(["bluetoothctl", "devices", "Connected"], capture_output=True, text=True).stdout
-    connected_macs = [line.split()[1] for line in connected_out.strip().split('\n') if line.startswith("Device")]
+    connected_macs = _connected_macs()
 
     if len(connected_macs) > 0:
         locked_device = connected_macs[0]
         print(f"\n🔒 [BT MODE] Auto-locked to existing device on boot: {locked_device}")
         play_sfx("./assets/sounds/bt_connected.wav")
-        subprocess.run(["bluetoothctl", "discoverable", "off"], stdout=subprocess.DEVNULL)
-        subprocess.run(["bluetoothctl", "pairable", "off"], stdout=subprocess.DEVNULL)
+        _set_pairing_open(False)
     else:
-        # If nobody is connected, open the vault doors for pairing
         print("\n🔓 [BT MODE] No known devices found. Entering Pairing Mode...")
-        play_sfx("./assets/sounds/bt_pairing.wav",)
-        time.sleep(2) # Let the sound play before enabling pairing
-    
-        subprocess.run(["bluetoothctl", "discoverable", "on"], stdout=subprocess.DEVNULL)
-        subprocess.run(["bluetoothctl", "pairable", "on"], stdout=subprocess.DEVNULL)
+        play_sfx("./assets/sounds/bt_pairing.wav")
+        time.sleep(2)
+        _set_pairing_open(True)
 
-
-    # 3. Start the normal monitoring loop
     while True:
         try:
-            connected_out = subprocess.run(["bluetoothctl", "devices", "Connected"], capture_output=True, text=True).stdout
-            connected_macs = [line.split()[1] for line in connected_out.strip().split('\n') if line.startswith("Device")]
+            connected_macs = _connected_macs()
 
             if len(connected_macs) == 0:
                 if locked_device is not None:
                     print("\n🔓 [BT MODE] Device disconnected. Volco is free.")
                     locked_device = None
-                    subprocess.run(["bluetoothctl", "discoverable", "on"], stdout=subprocess.DEVNULL)
-                    subprocess.run(["bluetoothctl", "pairable", "on"], stdout=subprocess.DEVNULL)
+                    _set_pairing_open(True)
 
             elif len(connected_macs) == 1:
                 if locked_device is None:
-                    # ⚡ THIS IS A NEW CONNECTION
                     locked_device = connected_macs[0]
                     print(f"\n🔒 [BT MODE] Locked to new device: {locked_device}")
                     play_sfx("./assets/sounds/bt_connected.wav")
-                    subprocess.run(["bluetoothctl", "trust", locked_device], stdout=subprocess.DEVNULL)
-                    subprocess.run(["bluetoothctl", "discoverable", "off"], stdout=subprocess.DEVNULL)
-                    subprocess.run(["bluetoothctl", "pairable", "off"], stdout=subprocess.DEVNULL)
+                    _btctl("trust", locked_device)
+                    _set_pairing_open(False)
 
             elif len(connected_macs) > 1:
                 for mac in connected_macs:
                     if mac != locked_device:
                         print(f"\n🛡️ [BT MODE] Intruder blocked! Kicking MAC: {mac}")
-                        subprocess.run(["bluetoothctl", "disconnect", mac], stdout=subprocess.DEVNULL)
+                        _btctl("disconnect", mac)
 
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"⚠️ [BT MODE] Monitor error: {e}")
         time.sleep(2)
 
+
 def enable_bluetooth_pairing():
+    if not can_use_bluez():
+        if is_macos():
+            print("📡 [BT MODE] macOS detected. Pair/connect Volco audio in System Settings > Bluetooth.")
+        else:
+            print(f"📡 [BT MODE] Smart Vault skipped on {platform_label()}: bluetoothctl is unavailable.")
+        return False
+
     print("📡 [BT MODE] Deploying Smart Vault...")
     threading.Thread(target=_bluetooth_background_manager, daemon=True).start()
+    return True

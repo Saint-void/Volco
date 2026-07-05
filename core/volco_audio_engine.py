@@ -33,6 +33,10 @@ class VolcoSpotifyEngine:
         self._cached_device_id = None
 
     def _get_user_id(self):
+        env_user_id = os.environ.get("VOLCO_USER_ID", "").strip()
+        if env_user_id:
+            return env_user_id
+
         memory_path = os.path.join(os.path.dirname(__file__), "current_user.txt")
         try:
             with open(memory_path, "r") as f:

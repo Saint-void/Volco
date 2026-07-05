@@ -12,9 +12,9 @@ requests
 zeroconf
 
 # Raspberry Pi hardware and Bluetooth data pipe
-bluezero
-gpiozero
+bluezero; platform_system == "Linux"
+gpiozero; platform_system == "Linux"
 pyserial
 
 # Optional keyboard fallback used during development/testing
-keyboard
+keyboard; platform_system == "Windows"

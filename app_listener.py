@@ -1,6 +1,9 @@
 import socket
 import json
 import threading
+from pathlib import Path
+
+CURRENT_USER_PATH = Path(__file__).resolve().parent / "core" / "current_user.txt"
 
 def start_app_listener():
     """Opens a Bluetooth Data Pipe to listen for the mobile app."""
@@ -30,7 +33,7 @@ def start_app_listener():
                     
                     if user_id:
                         print(f"🔑 [APP MODE] Success! Volco is now assigned to Vella User: {user_id}")
-                        # ⚡ TODO: We will write this user_id to a local config file here next!
+                        CURRENT_USER_PATH.write_text(f"{user_id.strip()}\n", encoding="utf-8")
                         
                     # Send a success message back to the phone screen
                     client_sock.send("Credentials Accepted!".encode("utf-8"))

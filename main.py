@@ -1,8 +1,6 @@
 import time
-import platform
 import sys
 import threading
-import subprocess
 
 # ⚡ 1. ONLY IMPORT THE AUDIO ENGINE FIRST
 from core.audio_io import play_sfx
@@ -20,7 +18,15 @@ from core.volco_spotify import VolcoSpotifyManager
 
 play_sfx("./assets/sounds/boot.wav")
 
-from core.bluetooth_pairing import enable_bluetooth_pairing
+from core.bluetooth_pairing import enable_bluetooth_pairing, set_bluetooth_power
+from core.platform_support import (
+    can_use_bluealsa_bridge,
+    can_use_gpio_button,
+    is_macos,
+    platform_label,
+    popen_quiet,
+    run_quiet,
+)
 from modes.ai_mode.session import start_ai_session
 from core.volco_audio_engine import VolcoSpotifyEngine
 
@@ -37,25 +43,32 @@ spotify_hw.start_client()
 # ==========================================
 # 🎵 BLUETOOTH BRIDGE MANAGER
 # ==========================================
+_audio_bridge_skip_logged = False
+
+
 def manage_audio_bridge(action="stop"):
-    subprocess.run(["killall", "bluealsa-aplay"], stderr=subprocess.DEVNULL)
+    global _audio_bridge_skip_logged
+
+    if not can_use_bluealsa_bridge():
+        if action == "start" and not _audio_bridge_skip_logged:
+            print(f"🎵 [AUDIO BRIDGE] BlueALSA bridge skipped on {platform_label()}.")
+            _audio_bridge_skip_logged = True
+        return False
+
+    run_quiet(["killall", "bluealsa-aplay"])
     if action == "start":
-        subprocess.Popen(
-            ["bluealsa-aplay", "00:00:00:00:00:00"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
+        popen_quiet(["bluealsa-aplay", "00:00:00:00:00:00"])
+    return True
 
 # ==========================================
 # 🔘 GLOBAL STATE & MANAGERS
 # ==========================================
-IS_WINDOWS = platform.system() == "Windows"
-
 # Power State Trackers
 volco_sleeping = False
 ai_session_active = False
 _was_held_flag = False
 conn_manager = None
+volco_button = None
 
 # New Trigger Events for the threaded engine
 trigger_event = threading.Event()
@@ -64,66 +77,124 @@ trigger_type = "VOICE"
 # ==========================================
 # 🔘 HARDWARE BUTTON INTERRUPTS
 # ==========================================
-if not IS_WINDOWS:
-    try:
-        from gpiozero import Button #type: ignore
+def enter_sleep():
+    """Shared sleep path for Pi button holds and laptop terminal controls."""
+    global volco_sleeping
 
-        volco_button = Button(17, bounce_time=0.1, hold_time=3.0)
+    if volco_sleeping:
+        return
 
-        def button_held():
-            """Fires exactly when the button has been held for 3 seconds."""
-            global _was_held_flag, volco_sleeping
-            _was_held_flag = True
-
-            if not volco_sleeping:
-                print("\n🌙 [POWER] 3-Second Hold Detected! Entering Deep Sleep...")
-                volco_sleeping = True
-                threading.Thread(target=play_sfx, args=("./assets/sounds/shutdown.wav",)).start()
-
-                # ⚡ 1. Kill the Spotify Standalone Client
-                spotify_hw.stop_client()
-
-                # 2. Kill Bluetooth & Audio Bridge
-                manage_audio_bridge("stop")
-                subprocess.run(["bluetoothctl", "power", "off"], stdout=subprocess.DEVNULL)
+    print("\n🌙 [POWER] Entering Deep Sleep...")
+    volco_sleeping = True
+    threading.Thread(target=play_sfx, args=("./assets/sounds/shutdown.wav",), daemon=True).start()
+    spotify_hw.stop_client()
+    manage_audio_bridge("stop")
+    set_bluetooth_power(False)
 
 
-        def button_released():
-            """Fires when you let go of the button."""
-            global _was_held_flag, volco_sleeping, ai_session_active, trigger_event, trigger_type
+def wake_up():
+    """Shared wake path for Pi button clicks and laptop terminal controls."""
+    global volco_sleeping
 
-            if _was_held_flag:
-                _was_held_flag = False
+    if not volco_sleeping:
+        return
+
+    print("\n☀️ [POWER] Waking up Volco!")
+    volco_sleeping = False
+    threading.Thread(target=play_sfx, args=("./assets/sounds/boot.wav",), daemon=True).start()
+    time.sleep(2)
+
+    if set_bluetooth_power(True):
+        threading.Thread(target=play_sfx, args=("./assets/sounds/bt_pairing.wav",), daemon=True).start()
+
+    print("🎵 [POWER] Starting Standalone Spotify Client...")
+    spotify_hw.start_client()
+
+
+def trigger_ai(source="BUTTON"):
+    global trigger_type
+
+    if volco_sleeping:
+        wake_up()
+        return
+
+    if ai_session_active:
+        print("\n🔘 [CONTROL] AI already active; trigger ignored.")
+        return
+
+    print(f"\n🚨 [CONTROL] {source} trigger! Starting AI...")
+    trigger_type = source
+    trigger_event.set()
+
+
+def _start_terminal_controls():
+    print("⌨️ [DEV INPUT] Press Enter to trigger AI. Type 'sleep' or 'wake' for power controls.")
+
+    def terminal_worker():
+        while True:
+            try:
+                line = sys.stdin.readline()
+                if line == "":
+                    return
+
+                command = line.strip().lower()
+                if command in {"sleep", "s"}:
+                    enter_sleep()
+                elif command in {"wake", "w"}:
+                    wake_up()
+                elif command in {"quit", "exit"}:
+                    print("⌨️ [DEV INPUT] Use Ctrl-C to shut down Volco.")
+                else:
+                    trigger_ai("TERMINAL")
+            except Exception as e:
+                print(f"⚠️ [DEV INPUT] Listener stopped: {e}")
                 return
 
-            if volco_sleeping:
-                print("\n☀️ [POWER] Waking up Volco!")
-                volco_sleeping = False
-                threading.Thread(target=play_sfx, args=("./assets/sounds/boot.wav",)).start()
-                time.sleep(2)
+    threading.Thread(target=terminal_worker, daemon=True).start()
 
-                # 1. Turn the radio back on
-                subprocess.run(["bluetoothctl", "power", "on"], stdout=subprocess.DEVNULL)
-                threading.Thread(target=play_sfx, args=("./assets/sounds/bt_pairing.wav",)).start()
 
-                # ⚡ 2. Boot the Spotify engine back up! (It auto-connects to the cache)
-                print("🎵 [POWER] Starting Standalone Spotify Client...")
-                spotify_hw.start_client()
+def _setup_controls():
+    global volco_button, _was_held_flag
 
-            elif ai_session_active:
-                print("\n🔘 [HARDWARE] AI already active; button press ignored.")
+    if can_use_gpio_button():
+        try:
+            from gpiozero import Button #type: ignore
 
-            else:
-                print("\n🚨 [HARDWARE INTERRUPT] Single click! Triggering AI...")
-                trigger_type = "BUTTON"
-                trigger_event.set()
+            volco_button = Button(17, bounce_time=0.1, hold_time=3.0)
 
-        volco_button.when_held = button_held
-        volco_button.when_released = button_released
-        print("🔘 [HARDWARE] Smart Button (Click/Hold) initialized on GPIO 17!")
+            def button_held():
+                global _was_held_flag
+                _was_held_flag = True
+                enter_sleep()
 
-    except ImportError:
-        print("⚠️ [HARDWARE] gpiozero not found! Button disabled.")
+            def button_released():
+                global _was_held_flag
+
+                if _was_held_flag:
+                    _was_held_flag = False
+                    return
+
+                if volco_sleeping:
+                    wake_up()
+                else:
+                    trigger_ai("BUTTON")
+
+            volco_button.when_held = button_held
+            volco_button.when_released = button_released
+            print("🔘 [HARDWARE] Smart Button (Click/Hold) initialized on GPIO 17!")
+            return
+
+        except Exception as e:
+            print(f"⚠️ [HARDWARE] GPIO button unavailable: {e}")
+
+    if is_macos():
+        print("🔘 [HARDWARE] MacBook mode active; GPIO button disabled.")
+    else:
+        print(f"🔘 [HARDWARE] GPIO button disabled on {platform_label()}.")
+    _start_terminal_controls()
+
+
+_setup_controls()
 
 
 def wake_word_worker(wake_engine):
@@ -180,8 +251,10 @@ def main():
     print("🧠 [DEBUG] WakeWordEngine initialized.")
 
     print("🧠 [DEBUG] Connecting to server...")
-    conn_manager.connect()
-    print("🧠 [DEBUG] Connected to server.")
+    if conn_manager.connect():
+        print("🧠 [DEBUG] Connected to server.")
+    else:
+        print("🧠 [DEBUG] Server connection pending; Volco will retry on trigger.")
 
     print("🧠 [DEBUG] Calibrating microphone...")
     current_noise_floor = calibrate_mic(duration=1.0)
@@ -314,6 +387,10 @@ if __name__ == "__main__":
     while True:
         try:
             main()
-        except BaseException as e:
+            break
+        except KeyboardInterrupt:
+            print("\n👋 Shutting down Volco OS...")
+            break
+        except Exception as e:
             print(f"🔄 Hard Restart Triggered: {e}")
             time.sleep(2)
